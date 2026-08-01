@@ -91,10 +91,14 @@ function printAnswer(answer: GroundedAnswer): void {
     );
   }
 
+  const support = answer.evidenceSupport;
   console.log(
-    `  ${c.dim('confidence')}        ${answer.confidence.toFixed(2)}` +
-      c.dim(`   ${answer.citations.length} verified citation(s)`) +
-      c.dim(`   ${answer.retrievedChunks.length} chunk(s) retrieved`)
+    `  ${c.dim('evidence support')}  ${support.label.toUpperCase()}` +
+      c.dim(
+        `   ${support.verified}/${support.claimed} citation(s) verified` +
+        `   ${support.documents} source(s)` +
+        `   ${answer.retrievedChunks.length} chunk(s) retrieved`
+      )
   );
   console.log(hr('═'));
   console.log();

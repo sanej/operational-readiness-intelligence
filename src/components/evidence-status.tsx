@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import type { EvidenceStatus } from '@/core/types';
+import type { EvidenceSupport } from '@/core/citations/validate';
 
 /**
  * Presentation for the four evidence statuses.
@@ -82,16 +83,23 @@ function Metric({ value, label }: { value: string; label: string }) {
   );
 }
 
+const SUPPORT_LABEL: Record<EvidenceSupport['label'], string> = {
+  strong: 'Strong',
+  moderate: 'Moderate',
+  weak: 'Weak',
+  none: 'None',
+};
+
 export function EvidenceStatusPanel({
   status,
   claimedStatus,
-  confidence,
+  evidenceSupport,
   citationCount,
   retrievedCount,
 }: {
   status: EvidenceStatus;
   claimedStatus?: EvidenceStatus;
-  confidence: number;
+  evidenceSupport: EvidenceSupport;
   citationCount: number;
   retrievedCount: number;
 }) {
@@ -107,9 +115,22 @@ export function EvidenceStatusPanel({
         </div>
 
         <div className="flex shrink-0 gap-6 pt-1">
-          <Metric value={String(citationCount)} label={`verified\ncitation${citationCount === 1 ? '' : 's'}`} />
+          <Metric
+            value={String(citationCount)}
+            label={`verified\ncitation${citationCount === 1 ? '' : 's'}`}
+          />
           <Metric value={String(retrievedCount)} label={'chunks\nretrieved'} />
-          <Metric value={confidence.toFixed(2)} label={'model\nconfidence'} />
+          {/* Counted from what survived validation, not reported by the model.
+              A model's self-assessed confidence is uncalibrated, and showing
+              one invites it to be read as a measurement. */}
+          <Metric
+            value={SUPPORT_LABEL[evidenceSupport.label]}
+            label={
+              evidenceSupport.claimed > 0
+                ? `evidence support\n${evidenceSupport.verified}/${evidenceSupport.claimed} verified · ${evidenceSupport.documents} source${evidenceSupport.documents === 1 ? '' : 's'}`
+                : 'evidence support'
+            }
+          />
         </div>
       </div>
 

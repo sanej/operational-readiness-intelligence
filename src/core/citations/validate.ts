@@ -36,7 +36,62 @@ export interface ValidationOutcome {
   rejected: RejectedCitation[];
   evidenceStatus: EvidenceStatus;
   confidence: number;
+  /** Deterministic support score; see computeEvidenceSupport. */
+  evidenceSupport: EvidenceSupport;
   warnings: string[];
+}
+
+/**
+ * How well the answer is backed by verifiable evidence.
+ *
+ * This deliberately replaces the model's self-reported confidence in the UI.
+ * A number an LLM produces about its own certainty is not calibrated against
+ * anything — a 0.98 and a 0.62 from the same model do not reliably differ in
+ * accuracy — and displaying one invites a reader to treat it as a measurement.
+ *
+ * Every input here is counted, not asserted: how many citations the model
+ * offered, how many survived verification against the retrieved text, and how
+ * many distinct documents those surviving citations reach. The model's
+ * confidence is still recorded in D1 for audit, but it is not what the
+ * interface shows.
+ */
+export interface EvidenceSupport {
+  /** Citations that survived validation. */
+  verified: number;
+  /** Citations the model claimed. */
+  claimed: number;
+  /** Distinct documents the surviving citations reach. */
+  documents: number;
+  /** verified / claimed, or 0 when nothing was claimed. */
+  verifiedRatio: number;
+  /** Plain-language summary for the interface. */
+  label: 'strong' | 'moderate' | 'weak' | 'none';
+}
+
+/**
+ * Score the evidence behind an answer from what actually survived.
+ *
+ * The thresholds are a presentation choice, not a probability. "Strong" means
+ * every claimed citation verified and more than one document supports the
+ * answer; "weak" means something survived but not much. Nothing here is a
+ * likelihood that the answer is correct, and the label is worded so it cannot
+ * be read as one.
+ */
+export function computeEvidenceSupport(
+  citations: Citation[],
+  claimedCount: number
+): EvidenceSupport {
+  const verified = citations.length;
+  const documents = new Set(citations.map((c) => c.documentId)).size;
+  const verifiedRatio = claimedCount > 0 ? verified / claimedCount : 0;
+
+  let label: EvidenceSupport['label'];
+  if (verified === 0) label = 'none';
+  else if (verifiedRatio === 1 && documents > 1) label = 'strong';
+  else if (verifiedRatio >= 0.6) label = 'moderate';
+  else label = 'weak';
+
+  return { verified, claimed: claimedCount, documents, verifiedRatio, label };
 }
 
 /**
@@ -216,6 +271,7 @@ export function validateCitations(
     rejected,
     evidenceStatus: enforced.status,
     confidence: enforced.confidence,
+    evidenceSupport: computeEvidenceSupport(citations, claimed.length),
     warnings,
   };
 }

@@ -344,6 +344,16 @@ slightly ill-fitting shape, never a wrong fact. The bias is toward the narrower 
 a readiness question answered in general-QA shape still surfaces the evidence and the
 conflicts, while a factual lookup answered as a report buries the answer.
 
+**Evidence support is counted, not asserted.**
+The interface shows an evidence-support score derived from what survived
+validation — how many citations the model offered, how many verified against the
+retrieved text, and how many distinct documents those reach. It deliberately
+replaces the model's self-reported confidence, which is not calibrated against
+anything: a 0.98 and a 0.62 from the same model do not reliably differ in
+accuracy, and displaying one invites a reader to treat it as a measurement. The
+model's confidence is still written to D1 for audit; it is simply not what the
+interface presents.
+
 **Conflicts are filtered by materiality.**
 Two revisions of an isolation procedure are retrieved for almost any question about the asset
 they cover. Reporting a conflict every time would make the signal worthless — a warning that

@@ -5,6 +5,7 @@
 // domain pack exists and satisfies the DomainPack contract.
 
 import type { z } from 'zod';
+import type { EvidenceSupport } from './citations/validate';
 
 // ===========================================================================
 // Evidence status
@@ -221,7 +222,14 @@ export interface GroundedAnswer {
   evidenceStatus: EvidenceStatus;
   /** Status the model proposed, before citation validation constrained it. */
   claimedStatus?: EvidenceStatus;
+  /**
+   * The model's self-reported confidence. Retained for audit only — it is not
+   * calibrated against anything and is deliberately not shown in the UI. See
+   * `evidenceSupport` for the deterministic measure the interface uses.
+   */
   confidence: number;
+  /** Counted from what survived citation validation. */
+  evidenceSupport: EvidenceSupport;
   citations: Citation[];
   /** Evidence that was retrieved, including chunks the answer did not cite. */
   retrievedChunks: RetrievedChunk[];

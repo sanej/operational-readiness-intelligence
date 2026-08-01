@@ -103,8 +103,12 @@ export function classifyIntent(question: string): IntentClassification {
  */
 export const INTENT_INSTRUCTIONS: Record<QueryIntent, string> = {
   GENERAL_QA: `INTENT: direct question.
-Answer the question and stop. Lead with the answer itself, not with context. Keep it to what was asked — if the question has a one-sentence answer, give one sentence and cite it.
-Do not add a readiness assessment, an outstanding-items review, or a conflict report unless the conflict materially changes the answer to THIS question.`,
+Give the minimum sufficient answer. Lead with the answer itself, not with context. If the question has a one-sentence answer, give one sentence and cite it, then stop.
+Do not add a readiness assessment or an outstanding-items review.
+
+ON CONTESTED DETAIL — this is the common failure. When the evidence contains a requirement that two revisions state differently, do NOT volunteer that dispute unless the question cannot be answered without it. Asked "what is the critical step", name the step. Do not go on to explain which isolation method one revision permits, or what another requires instead — that answers a question nobody asked, and it presents a contested specific as though it were settled.
+If a contested detail genuinely IS the answer, give it in one sentence and attach a single clause naming the disagreement, e.g. "…per SP-204 Rev 7 §2.2, though Rev 6 states otherwise and neither is marked superseded."
+Never expand a disputed point into its own paragraph in this mode.`,
 
   SYNTHESIS: `INTENT: consolidate across records.
 Bring together what the evidence says across every relevant document. Group by subject rather than by source document, and attribute each point to the record it came from. Be complete over the set the question defines.

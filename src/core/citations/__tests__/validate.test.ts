@@ -6,8 +6,13 @@
 // is built on that being impossible.
 
 import { describe, expect, it } from 'vitest';
-import { enforceStatus, isQuoteGrounded, validateCitations } from '../validate';
-import type { EvidenceConflict, RetrievedChunk } from '../../types';
+import {
+  computeEvidenceSupport,
+  enforceStatus,
+  isQuoteGrounded,
+  validateCitations,
+} from '../validate';
+import type { Citation, EvidenceConflict, RetrievedChunk } from '../../types';
 
 function chunk(id: string, content: string): RetrievedChunk {
   return {
@@ -100,6 +105,33 @@ describe('enforceStatus', () => {
   it('clamps out-of-range confidence', () => {
     expect(enforceStatus('SUPPORTED', 1, 1, false, 5).confidence).toBe(1);
     expect(enforceStatus('SUPPORTED', 1, 1, false, Number.NaN).confidence).toBe(0);
+  });
+});
+
+describe('computeEvidenceSupport', () => {
+  const cite = (documentId: string): Citation => ({
+    id: 'c',
+    chunkId: 'k',
+    documentId,
+    citedContent: 'q',
+    relevanceScore: 1,
+  });
+
+  it('is strong only when every citation verified across multiple sources', () => {
+    expect(computeEvidenceSupport([cite('a'), cite('b')], 2).label).toBe('strong');
+    // Same count, one source — well cited but narrowly.
+    expect(computeEvidenceSupport([cite('a'), cite('a')], 2).label).toBe('moderate');
+  });
+
+  it('degrades as citations are dropped', () => {
+    expect(computeEvidenceSupport([cite('a'), cite('b')], 3).label).toBe('moderate');
+    expect(computeEvidenceSupport([cite('a')], 4).label).toBe('weak');
+    expect(computeEvidenceSupport([], 3).label).toBe('none');
+  });
+
+  it('reports the counts it was derived from', () => {
+    const support = computeEvidenceSupport([cite('a'), cite('b')], 4);
+    expect(support).toMatchObject({ verified: 2, claimed: 4, documents: 2, verifiedRatio: 0.5 });
   });
 });
 

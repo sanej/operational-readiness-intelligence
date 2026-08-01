@@ -293,7 +293,7 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
       <EvidenceStatusPanel
         status={answer.evidenceStatus}
         claimedStatus={answer.claimedStatus}
-        confidence={answer.confidence}
+        evidenceSupport={answer.evidenceSupport}
         citationCount={answer.citations.length}
         retrievedCount={answer.retrievedChunks.length}
       />

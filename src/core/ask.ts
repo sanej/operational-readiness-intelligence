@@ -119,6 +119,7 @@ export class AskPipeline {
           'using terminology that appears in the source documents.',
         evidenceStatus: 'INSUFFICIENT_EVIDENCE',
         confidence: 0,
+        evidenceSupport: { verified: 0, claimed: 0, documents: 0, verifiedRatio: 0, label: 'none' },
         citations: [],
         retrievedChunks: [],
         missingEvidence: ['No documents in this corpus matched the question.'],
@@ -254,21 +255,43 @@ export class AskPipeline {
       // One side or neither: the answer did not turn on where they differ.
       if (citedSides.length < 2) return false;
 
-      // Both sides cited — but on the same subject matter? A readiness review
-      // legitimately draws on several sections of both revisions, so require
-      // an overlapping section only outside that intent, where a narrow
-      // question should produce a narrow conflict claim.
-      if (intent === 'READINESS_ASSESSMENT') return true;
+      // A readiness review legitimately draws on several sections of both
+      // revisions, and an unresolved document-control inconsistency is
+      // material to it whatever the sections. Conflict checks exist to report
+      // exactly this. Both pass through.
+      if (intent === 'READINESS_ASSESSMENT' || intent === 'CONFLICT_CHECK') return true;
 
+      // For a narrow question, both sides must be cited from the same section
+      // — otherwise they were used for different facts and are not
+      // contradicting each other.
       const sectionSets = citedSides
         .map((id) => citedSectionsByDocument.get(id))
         .filter((s): s is Set<string> => Boolean(s));
 
-      // No section provenance to compare: fall back to co-citation.
-      if (sectionSets.length < 2) return true;
+      if (sectionSets.length < 2) return false;
 
-      return sectionSets.some((set, i) =>
-        sectionSets.some((other, j) => i !== j && [...set].some((s) => other.has(s)))
+      const sharedSections = [...sectionSets[0]].filter((s) =>
+        sectionSets.slice(1).every((other) => other.has(s))
+      );
+
+      if (sharedSections.length === 0) return false;
+
+      // And the disputed section must be what the question is about. Two
+      // revisions of an isolation procedure genuinely disagree, but that
+      // disagreement does not bear on "which are the critical failure paths?"
+      // — the answer cited them for context, not for the contested point.
+      // Without this the conflict fires on any question that happens to touch
+      // the asset, which is the noise the whole filter exists to prevent.
+      const questionWords = new Set(
+        input.question
+          .toLowerCase()
+          .replace(/[^a-z0-9 ]/g, ' ')
+          .split(/\s+/)
+          .filter((w) => w.length > 3)
+      );
+
+      return sharedSections.some((section) =>
+        section.split(' ').some((word) => word.length > 3 && questionWords.has(word))
       );
     });
 
@@ -279,6 +302,18 @@ export class AskPipeline {
     // CONFLICTING_EVIDENCE for a question that is cleanly supported.
     const materialSemanticConflicts = semanticConflicts.filter((conflict) => {
       if (citedDocumentIds.size === 0) return true;
+
+      // Outside readiness and conflict checks, a semantic conflict only counts
+      // if a structural one survived the same test. The model reports every
+      // disagreement it notices in the retrieved set, faithfully but without
+      // regard to what was asked.
+      if (
+        intent !== 'READINESS_ASSESSMENT' &&
+        intent !== 'CONFLICT_CHECK' &&
+        materialStructuralConflicts.length === 0
+      ) {
+        return false;
+      }
 
       // A contradiction is between two sources. If the answer only drew on one
       // of them, the disagreement did not bear on what was asked. A conflict
@@ -331,6 +366,7 @@ export class AskPipeline {
       evidenceStatus: validated.evidenceStatus,
       claimedStatus: generated.parsed.evidence_status,
       confidence: validated.confidence,
+      evidenceSupport: validated.evidenceSupport,
       citations: validated.citations,
       retrievedChunks: retrieved.chunks,
       missingEvidence,
