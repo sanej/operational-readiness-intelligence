@@ -1,6 +1,7 @@
 'use client';
 
-import { FileText, CircleAlert, Loader2, ScanLine } from 'lucide-react';
+import { useState } from 'react';
+import { FileText, CircleAlert, Loader2, ScanLine, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface DocumentSummary {
@@ -39,14 +40,83 @@ function Pill({ children, className }: { children: React.ReactNode; className?: 
   );
 }
 
+/**
+ * Delete control with an inline confirm step.
+ *
+ * Removal spans Vectorize, R2, and D1 and cannot be undone, so a single
+ * mis-click should not be able to drop a document. The confirm is inline
+ * rather than a modal — it keeps the action attached to the row it affects.
+ */
+function DeleteControl({
+  document,
+  onDelete,
+}: {
+  document: DocumentSummary;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (busy) {
+    return (
+      <span className="flex h-6 w-6 items-center justify-center text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      </span>
+    );
+  }
+
+  if (confirming) {
+    return (
+      <span className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onDelete(document.id);
+            } finally {
+              setBusy(false);
+              setConfirming(false);
+            }
+          }}
+          className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive transition-colors hover:bg-destructive-subtle"
+        >
+          Remove
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted"
+        >
+          Cancel
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      aria-label={`Remove ${document.title}`}
+      title="Remove from corpus"
+      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-all hover:bg-destructive-subtle hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 export function DocumentList({
   documents,
   loading,
   error,
+  onDelete,
 }: {
   documents: DocumentSummary[];
   loading: boolean;
   error?: string;
+  onDelete?: (id: string) => Promise<void>;
 }) {
   if (loading) {
     return (
@@ -101,14 +171,20 @@ export function DocumentList({
         return (
           <li
             key={doc.id}
-            className="rounded-lg border border-border bg-surface p-3 transition-colors hover:border-border-strong"
+            className="group rounded-lg border border-border bg-surface p-3 transition-colors hover:border-border-strong"
           >
             <div className="flex items-start gap-2.5">
               <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12.5px] font-medium leading-snug" title={doc.title}>
-                  {doc.title}
-                </p>
+                <div className="flex items-start gap-2">
+                  <p
+                    className="min-w-0 flex-1 truncate text-[12.5px] font-medium leading-snug"
+                    title={doc.title}
+                  >
+                    {doc.title}
+                  </p>
+                  {onDelete && <DeleteControl document={doc} onDelete={onDelete} />}
+                </div>
                 {meta && (
                   <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{meta}</p>
                 )}

@@ -24,7 +24,11 @@ export const pharmaMetadataSchema = z
   .object({
     // -- shared, promoted to columns by the pipeline ------------------------
     title: z.string().min(1),
-    documentType: z.enum(PHARMA_DOCUMENT_TYPES),
+    // Optional so an ad-hoc upload can be ingested without first being
+    // classified. The vocabulary stays strict: a value outside this list is
+    // still rejected. An untyped document is excluded from revision-conflict
+    // grouping and authority ranking, which both key on document type.
+    documentType: z.enum(PHARMA_DOCUMENT_TYPES).optional(),
     revision: z.string().optional(),
     effectiveDate: z.string().optional(),
     authority: z.string().optional(),

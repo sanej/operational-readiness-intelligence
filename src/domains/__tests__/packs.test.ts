@@ -84,6 +84,20 @@ describe.each(packs)('$id pack', (pack) => {
     expect(typo.success).toBe(false);
   });
 
+  it('accepts an unclassified document but still rejects an invalid type', () => {
+    // An ad-hoc upload has no front matter, so documentType is absent. That
+    // must ingest — but the vocabulary stays closed, so a typo or an invented
+    // type is still an error.
+    const untyped = pack.metadataSchema.safeParse({ title: 'Vendor inspection report' });
+    expect(untyped.success).toBe(true);
+
+    const invalid = pack.metadataSchema.safeParse({
+      title: 'X',
+      documentType: 'operatng_procedure',
+    });
+    expect(invalid.success).toBe(false);
+  });
+
   it('rejects a document type from another domain', () => {
     const otherPack = packs.find((p) => p.id !== pack.id)!;
     const foreignType = otherPack.documentTypes[0].id;

@@ -172,6 +172,24 @@ export default function Home() {
     }
   }
 
+  async function handleDelete(documentId: string) {
+    try {
+      const response = await fetch(`/api/documents/${documentId}?domain=${domainId}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Could not remove the document.');
+
+      // The answer on screen may cite the document that just disappeared.
+      setAnswer(undefined);
+      await loadDocuments();
+    } catch (error) {
+      setDocumentsError(
+        error instanceof Error ? error.message : 'Could not remove the document.'
+      );
+    }
+  }
+
   async function handleUpload(files: FileList | null) {
     if (!files || files.length === 0) return;
 
@@ -255,8 +273,12 @@ export default function Home() {
           {/* ------------------------------------------------------------ */}
           <aside className="space-y-5">
             <section>
+              {/* In production the corpus is loaded from the controlled
+                  document system. This path is for a document not yet in it —
+                  a vendor report, a contractor method statement — brought into
+                  scope for one review. */}
               <h2 className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Add documents
+                Add a document
               </h2>
 
               <label
@@ -287,6 +309,9 @@ export default function Home() {
                     <Upload className="h-5 w-5 text-muted-foreground" />
                     <span className="mt-2.5 text-[13px] font-medium">Choose files</span>
                     <span className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                      Not yet in the controlled set
+                    </span>
+                    <span className="mt-1.5 text-[10.5px] leading-relaxed text-muted-foreground/70">
                       PDF · images · Office · Markdown · CSV · JSON
                     </span>
                   </>
@@ -332,6 +357,7 @@ export default function Home() {
                 documents={documents}
                 loading={documentsLoading}
                 error={documentsError}
+                onDelete={handleDelete}
               />
             </section>
           </aside>

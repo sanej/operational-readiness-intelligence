@@ -22,7 +22,13 @@ export const industrialMetadataSchema = z
   .object({
     // -- shared, promoted to columns by the pipeline ------------------------
     title: z.string().min(1),
-    documentType: z.enum(INDUSTRIAL_DOCUMENT_TYPES),
+    // Optional so an ad-hoc upload — a vendor report, a contractor method
+    // statement — can be ingested without first being classified. The
+    // *vocabulary* stays strict: a value outside this list is still rejected,
+    // so a typo cannot silently create a new document type. An untyped
+    // document is simply excluded from revision-conflict grouping and
+    // authority ranking, which both key on document type.
+    documentType: z.enum(INDUSTRIAL_DOCUMENT_TYPES).optional(),
     revision: z.string().optional(),
     effectiveDate: z.string().optional(),
     authority: z.string().optional(),
