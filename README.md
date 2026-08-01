@@ -67,6 +67,16 @@ at least one quote verified to exist in a retrieved source.
 
 ---
 
+## Further reading
+
+| Document | Covers |
+|---|---|
+| [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Every deliverable, how it was verified, and what is explicitly *not* claimed |
+| [docs/MODELS.md](docs/MODELS.md) | Which Mistral model runs where, why, and what is deliberately not an LLM call |
+| [docs/INGESTION.md](docs/INGESTION.md) | The upload path end to end — chunking rules, metadata, idempotency |
+
+---
+
 ## Architecture
 
 ```
