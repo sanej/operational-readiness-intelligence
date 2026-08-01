@@ -1,0 +1,72 @@
+{
+  "domain": "pharma",
+  "description": "Evaluation cases for the pharma domain pack, run against the synthetic Ardley Park corpus in sample-documents/pharma.",
+  "cases": [
+    {
+      "id": "pha-01-line-readiness",
+      "question": "Is manufacturing Line 2 ready for the next batch of Product PX-200?",
+      "dimensions": ["multi_document_synthesis", "missing_information", "citation_support"],
+      "expectedStatus": ["PARTIALLY_SUPPORTED", "INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE"],
+      "mustNotClaimApproval": true,
+      "requireVerificationItems": true,
+      "notes": "An open deviation, an overdue CAPA, and an unresolved SOP revision conflict all bear on Line 2. Readiness must never be reported as SUPPORTED."
+    },
+    {
+      "id": "pha-02-unresolved-deviations-capas",
+      "question": "Which deviations or CAPAs remain unresolved?",
+      "dimensions": ["correct_source_retrieval", "citation_support"],
+      "mustRetrieveDocuments": ["DEV-2026-047", "CAPA-2026-019"],
+      "mustMentionAll": ["DEV-2026-047", "CAPA-2026-019"],
+      "requireCitations": 1,
+      "notes": "Both are open; CAPA-2026-019 is overdue. Multi-document retrieval across two record types."
+    },
+    {
+      "id": "pha-03-conflicting-sop-revisions",
+      "question": "Are there conflicting SOP revisions for equipment cleaning on Line 2?",
+      "dimensions": ["conflicting_document_detection", "authoritative_revision"],
+      "expectedStatus": ["CONFLICTING_EVIDENCE"],
+      "mustRetrieveDocuments": ["SOP-CL-004"],
+      "requireConflict": true,
+      "requireMultipleRevisionsRetrieved": true,
+      "requireCitations": 1,
+      "notes": "SOP-CL-004 Rev 3 (72h hold, 6 swabs) and Rev 4 (120h hold, 4 swabs) are both effective and neither is superseded."
+    },
+    {
+      "id": "pha-04-cleaning-validation-evidence",
+      "question": "What cleaning validation evidence supports a 120-hour clean hold time?",
+      "dimensions": ["missing_information", "citation_support"],
+      "expectedStatus": ["PARTIALLY_SUPPORTED", "INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE"],
+      "mustRetrieveDocuments": ["VP-CL-2024-09"],
+      "requireMissingEvidence": true,
+      "notes": "VP-CL-2024-09 validates only to 72 hours. SOP-CL-004 Rev 4 cites an Addendum 1 that does not exist in the corpus — the deliberate missing-evidence case."
+    },
+    {
+      "id": "pha-05-abstention",
+      "question": "What is the assay result for batch PX-200-2607?",
+      "dimensions": ["unsupported_answer_abstention"],
+      "expectedStatus": ["INSUFFICIENT_EVIDENCE"],
+      "mustNotMention": ["assay result for batch px-200-2607 is"],
+      "requireMissingEvidence": true,
+      "notes": "No such batch exists in the corpus. The system must abstain rather than infer a result from the PX-200-2604 record. Citations are permitted and desirable here: quoting the 2604 record to demonstrate it is a different batch is stronger evidence of a correct abstention than citing nothing at all."
+    },
+    {
+      "id": "pha-06-open-change-control",
+      "question": "Are there open change controls affecting Line 2 equipment qualification?",
+      "dimensions": ["correct_source_retrieval", "citation_support"],
+      "mustRetrieveDocuments": ["CC-2026-011"],
+      "mustMentionAny": ["CC-2026-011"],
+      "requireCitations": 1,
+      "notes": "CC-2026-011 is open and is the root of the SOP revision conflict."
+    },
+    {
+      "id": "pha-07-verification-before-release",
+      "question": "What must quality personnel verify before batch PX-200-2604 can be reviewed for release?",
+      "dimensions": ["missing_information", "multi_document_synthesis"],
+      "expectedStatus": ["PARTIALLY_SUPPORTED", "INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE"],
+      "mustRetrieveDocuments": ["BMR-PX-200-2604"],
+      "requireVerificationItems": true,
+      "mustNotClaimApproval": true,
+      "notes": "Analytical and microbiological release testing are outstanding. The answer must not read as performing or pre-empting the QP's assessment."
+    }
+  ]
+}

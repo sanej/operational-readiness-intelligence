@@ -1,0 +1,51 @@
+name = "operational-readiness-intelligence"
+main = ".open-next/worker.js"
+compatibility_date = "2026-07-31"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# ============================================================================
+# Cloudflare services
+# ============================================================================
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ori-db-dev"
+database_id = "5de3b72a-8a91-4358-99df-b0725798bad0"
+# Use the real D1 instance in local dev so the demo path is genuinely live
+# rather than passing against a local emulator that production never sees.
+remote = true
+
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "ori-documents-dev"
+remote = true
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "ori-vectors-dev"
+# Vectorize has no local emulator; always the real index.
+remote = true
+
+# ============================================================================
+# Non-secret configuration
+#
+# MISTRAL_API_KEY is deliberately NOT declared here — [vars] ships in plaintext
+# with the Worker. Set it with:
+#   npx wrangler secret put MISTRAL_API_KEY
+# Locally it is read from .dev.vars (git-ignored).
+# ============================================================================
+
+[vars]
+MISTRAL_EMBED_MODEL = "mistral-embed"
+MISTRAL_CHAT_MODEL = "mistral-large-latest"
+MISTRAL_OCR_MODEL = "mistral-ocr-latest"
+CHUNK_TARGET_TOKENS = "512"
+CHUNK_OVERLAP_TOKENS = "100"
+RETRIEVAL_TOP_K = "8"
+
+[observability]
+enabled = true

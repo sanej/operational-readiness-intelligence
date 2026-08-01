@@ -1,0 +1,295 @@
+// The ask pipeline: retrieve -> detect conflicts -> generate -> validate -> persist.
+//
+// This is the single entry point for answering a question, shared by the web
+// API and the CLI. The ordering matters:
+//
+//   1. Retrieve with authority-aware ranking, so current revisions win.
+//   2. Detect structural conflicts from metadata BEFORE generation, so the
+//      model is told about a competing revision it might not otherwise notice.
+//   3. Generate a structured answer with a proposed status.
+//   4. Validate every citation against what was actually retrieved, and cap
+//      the status by what survived. The model proposes; the system decides.
+//
+// Step 4 is why a "SUPPORTED" from ORI means something: it cannot be reached
+// without at least one quote verified to exist in a retrieved chunk.
+
+import { createConfig, type OriBindings } from './config';
+import { validateCitations, type ClaimedCitation } from './citations/validate';
+import { EmbeddingService } from './embeddings/mistral';
+import { GenerationService } from './generation/generate';
+import { newId } from './ids';
+import { detectRevisionConflicts, documentSubject, RetrievalService } from './retrieval/retrieve';
+import { Storage } from './storage';
+import type {
+  DomainPack,
+  EvidenceConflict,
+  GroundedAnswer,
+  RetrievalFilters,
+} from './types';
+
+export interface AskInput {
+  corpusId: string;
+  question: string;
+  topK?: number;
+  filters?: RetrievalFilters;
+  /** Skip the D1 write — used by the eval harness to avoid polluting history. */
+  persist?: boolean;
+}
+
+export class AskPipeline {
+  private readonly storage: Storage;
+  private readonly retrieval: RetrievalService;
+  private readonly generation: GenerationService;
+  private readonly config: ReturnType<typeof createConfig>;
+
+  constructor(
+    bindings: OriBindings,
+    private readonly pack: DomainPack
+  ) {
+    this.config = createConfig(bindings);
+    this.storage = new Storage(bindings);
+
+    const embeddings = new EmbeddingService(this.config.mistral);
+    this.retrieval = new RetrievalService(
+      this.storage.d1,
+      this.storage.vectors,
+      embeddings,
+      this.config.mistral
+    );
+    this.generation = new GenerationService(this.config.mistral);
+  }
+
+  async ask(input: AskInput): Promise<GroundedAnswer> {
+    const startedAt = Date.now();
+    const createdAt = new Date().toISOString();
+    const id = newId('qst');
+
+    const topK = input.topK ?? this.pack.defaultTopK ?? this.config.retrieval.defaultTopK;
+
+    // -- 1. retrieve ---------------------------------------------------------
+    const retrieved = await this.retrieval.retrieve({
+      corpusId: input.corpusId,
+      domain: this.pack.id,
+      query: input.question,
+      topK,
+      filters: input.filters,
+      authorityWeights: this.pack.authorityWeights,
+    });
+
+    // Nothing retrieved: there is nothing to ground an answer in, and calling
+    // the model would only invite it to invent one.
+    if (retrieved.chunks.length === 0) {
+      const answer: GroundedAnswer = {
+        id,
+        corpusId: input.corpusId,
+        domain: this.pack.id,
+        question: input.question,
+        answer:
+          'No evidence in this corpus matched the question. Nothing can be concluded. ' +
+          'Confirm that the relevant documents have been ingested, or rephrase the question ' +
+          'using terminology that appears in the source documents.',
+        evidenceStatus: 'INSUFFICIENT_EVIDENCE',
+        confidence: 0,
+        citations: [],
+        retrievedChunks: [],
+        missingEvidence: ['No documents in this corpus matched the question.'],
+        conflicts: [],
+        verificationRequired: [
+          'Confirm the relevant documents have been uploaded and indexed for this corpus.',
+        ],
+        warnings: [],
+        timings: {
+          retrievalMs: retrieved.latencyMs,
+          generationMs: 0,
+          totalMs: Date.now() - startedAt,
+        },
+        model: this.config.mistral.chatModel,
+        createdAt,
+      };
+
+      if (input.persist !== false) await this.storage.d1.saveAnswer(answer);
+      return answer;
+    }
+
+    // -- 2. structural conflict detection -----------------------------------
+    const documentsById = new Map(
+      await Promise.all(
+        retrieved.documents.map(async (d) => {
+          const row = await this.storage.d1.getDocument(d.id);
+          const extra = row ? (JSON.parse(row.metadata || '{}') as Record<string, unknown>) : {};
+          // Same grouping rule retrieval uses, so the two agree on what counts
+          // as "the same document, different revision".
+          const subject = documentSubject(extra);
+          return [
+            d.id,
+            {
+              documentType: d.documentType,
+              revision: d.revision,
+              status: d.status,
+              title: d.title,
+              subject,
+            },
+          ] as const;
+        })
+      )
+    );
+
+    const structuralConflicts = detectRevisionConflicts(retrieved.chunks, documentsById);
+
+    // -- 3. generate ---------------------------------------------------------
+    const generated = await this.generation.generate(
+      input.question,
+      retrieved.chunks,
+      this.pack,
+      structuralConflicts
+    );
+
+    // Merge the model's semantic conflicts with the structural ones. Structural
+    // conflicts are facts about the corpus; the model's are claims about
+    // content, kept only when they name chunks that were actually retrieved.
+    const retrievedIds = new Set(retrieved.chunks.map((c) => c.chunkId));
+    const semanticConflicts: EvidenceConflict[] = generated.parsed.conflicts
+      .filter((c) => c.description?.trim())
+      .map((c) => {
+        const chunkIds = (c.chunk_ids ?? []).filter((cid) => retrievedIds.has(cid));
+        return {
+          kind: 'substantive' as const,
+          description: c.description,
+          chunkIds,
+          documentIds: [
+            ...new Set(
+              chunkIds
+                .map((cid) => retrieved.chunks.find((rc) => rc.chunkId === cid)?.documentId)
+                .filter((d): d is string => Boolean(d))
+            ),
+          ],
+        };
+      })
+      // A conflict claim citing no real chunk is unverifiable, like any other
+      // unsourced claim.
+      .filter((c) => c.chunkIds.length > 0);
+
+    // -- 4. validate citations and enforce status ----------------------------
+    const claimed: ClaimedCitation[] = generated.parsed.citations.map((c) => ({
+      chunk_id: c.chunk_id,
+      quote: c.quote,
+      relevance: c.relevance,
+    }));
+
+    // Validate first without conflicts, so the set of cited documents is known
+    // before deciding which structural conflicts are material to this answer.
+    const preliminary = validateCitations(
+      claimed,
+      retrieved.chunks,
+      generated.parsed.evidence_status,
+      generated.parsed.confidence,
+      []
+    );
+
+    // A competing revision is only a conflict *for this question* if it bears
+    // on it. Two revisions of an isolation procedure are retrieved for almost
+    // any question about the asset they cover; reporting a conflict every time
+    // makes the signal worthless, because a warning that fires on routine
+    // questions is one a reviewer learns to dismiss.
+    //
+    // The test is whether both sides are genuinely *engaged* by the question:
+    // either the answer cited both, or both rank near the top of the retrieved
+    // set — which means the question is about the contested subject matter,
+    // whether or not the model chose to quote each side.
+    const citedDocumentIds = new Set(preliminary.citations.map((c) => c.documentId));
+
+    const materialStructuralConflicts = structuralConflicts.filter((conflict) => {
+      // Nothing was cited at all: no signal either way, and the corpus
+      // inconsistency still stands, so surface it.
+      if (citedDocumentIds.size === 0) return true;
+
+      // Both sides informed the answer — it genuinely rests on contradictory
+      // sources, so the reader must be told. One side only means the two
+      // revisions were both retrieved (as they are for almost any question
+      // about the asset they cover) but the answer did not turn on where they
+      // differ. Retrieval position is not evidence of relevance here: long
+      // procedures rank highly on topic alone.
+      const citedSides = conflict.documentIds.filter((id) => citedDocumentIds.has(id)).length;
+      return citedSides >= 2;
+    });
+
+    // The same standard applies to the model's own conflict claims. It will
+    // faithfully report that two retrieved revisions disagree even when the
+    // question was about something neither of them governs — true, but not an
+    // answer to what was asked, and it would set the status to
+    // CONFLICTING_EVIDENCE for a question that is cleanly supported.
+    const materialSemanticConflicts = semanticConflicts.filter((conflict) => {
+      if (citedDocumentIds.size === 0) return true;
+
+      // A contradiction is between two sources. If the answer only drew on one
+      // of them, the disagreement did not bear on what was asked. A conflict
+      // confined to a single document is kept — that is an internal
+      // inconsistency in a document the answer did rely on.
+      const cited = conflict.documentIds.filter((id) => citedDocumentIds.has(id)).length;
+      return conflict.documentIds.length < 2 ? cited >= 1 : cited >= 2;
+    });
+
+    const conflicts = [...materialStructuralConflicts, ...materialSemanticConflicts];
+
+    // Re-run enforcement with the conflicts that survived, so the status
+    // reflects them.
+    const validated = validateCitations(
+      claimed,
+      retrieved.chunks,
+      generated.parsed.evidence_status,
+      generated.parsed.confidence,
+      conflicts
+    );
+
+    // An operational question always leaves something for a human to confirm.
+    const verificationRequired =
+      generated.parsed.verification_required.length > 0
+        ? generated.parsed.verification_required
+        : [
+            'Confirm these findings against the controlled source documents before acting.',
+          ];
+
+    // A non-SUPPORTED status asserts that something is absent or contested. An
+    // empty missing-evidence list alongside it is self-contradictory, and it
+    // strips the reader of the one thing that makes such an answer actionable:
+    // knowing what to go and find. The prompt asks for this; enforce it too,
+    // because the prompt cannot guarantee it.
+    const missingEvidence =
+      generated.parsed.missing_evidence.length > 0 || validated.evidenceStatus === 'SUPPORTED'
+        ? generated.parsed.missing_evidence
+        : [
+            'The evidence in this corpus does not fully answer the question, but the specific ' +
+              'gap was not identified. Review the retrieved evidence below and confirm which ' +
+              'controlled documents are missing.',
+          ];
+
+    const answer: GroundedAnswer = {
+      id,
+      corpusId: input.corpusId,
+      domain: this.pack.id,
+      question: input.question,
+      answer: generated.parsed.answer,
+      evidenceStatus: validated.evidenceStatus,
+      claimedStatus: generated.parsed.evidence_status,
+      confidence: validated.confidence,
+      citations: validated.citations,
+      retrievedChunks: retrieved.chunks,
+      missingEvidence,
+      conflicts,
+      verificationRequired,
+      warnings: validated.warnings,
+      timings: {
+        retrievalMs: retrieved.latencyMs,
+        generationMs: generated.generationMs,
+        totalMs: Date.now() - startedAt,
+      },
+      usage: generated.usage,
+      model: generated.model,
+      createdAt,
+    };
+
+    if (input.persist !== false) await this.storage.d1.saveAnswer(answer);
+
+    return answer;
+  }
+}

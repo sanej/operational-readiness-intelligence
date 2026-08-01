@@ -1,0 +1,75 @@
+{
+  "domain": "industrial",
+  "description": "Evaluation cases for the industrial domain pack, run against the synthetic Northfield Terminal corpus in sample-documents/industrial.",
+  "cases": [
+    {
+      "id": "ind-01-readiness-synthesis",
+      "question": "Is Compressor C-101 ready for planned maintenance?",
+      "dimensions": ["multi_document_synthesis", "citation_support", "missing_information"],
+      "expectedStatus": ["PARTIALLY_SUPPORTED", "INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE"],
+      "mustRetrieveDocuments": ["IR-2026-014", "CA-2026-031"],
+      "mustMentionAny": ["F-2026-014-01", "CA-2026-031"],
+      "mustNotClaimApproval": true,
+      "requireCitations": 1,
+      "requireVerificationItems": true,
+      "notes": "Readiness cannot be SUPPORTED: an overdue corrective action and an open high-severity finding exist. The answer must surface them and must not read as an approval."
+    },
+    {
+      "id": "ind-02-unresolved-findings",
+      "question": "Which inspection findings remain unresolved for C-101?",
+      "dimensions": ["correct_source_retrieval", "citation_support"],
+      "mustRetrieveDocuments": ["IR-2026-014"],
+      "mustMentionAll": ["F-2026-014-01", "F-2026-014-02"],
+      "mustNotMention": [],
+      "requireCitations": 1,
+      "notes": "F-2026-014-01 and F-2026-014-02 are open; F-2026-014-03 is closed. Retrieval must reach the inspection report."
+    },
+    {
+      "id": "ind-03-conflicting-revisions",
+      "question": "What isolation requirements apply before intrusive work begins on C-101?",
+      "dimensions": ["conflicting_document_detection", "authoritative_revision"],
+      "expectedStatus": ["CONFLICTING_EVIDENCE"],
+      "mustRetrieveDocuments": ["SP-204"],
+      "requireConflict": true,
+      "requireMultipleRevisionsRetrieved": true,
+      "requireCitations": 1,
+      "notes": "SP-204 Rev 6 and Rev 7 are both active and disagree on whether double block and bleed is sufficient. Both must be retrieved and the conflict reported."
+    },
+    {
+      "id": "ind-04-unresolved-corrective-action",
+      "question": "Are there any overdue corrective actions against Compressor C-101?",
+      "dimensions": ["correct_source_retrieval", "missing_information", "citation_support"],
+      "mustRetrieveDocuments": ["CA-2026-031"],
+      "mustMentionAny": ["overdue", "not been completed", "past its target"],
+      "requireCitations": 1,
+      "notes": "CA-2026-031 is overdue with no outage window allocated. This must be stated explicitly, not implied."
+    },
+    {
+      "id": "ind-05-abstention",
+      "question": "What is the calibration due date for pressure transmitter PT-4417 on Train B?",
+      "dimensions": ["unsupported_answer_abstention"],
+      "expectedStatus": ["INSUFFICIENT_EVIDENCE"],
+      "requireMissingEvidence": true,
+      "notes": "No such instrument exists in the corpus. The system must abstain rather than construct a plausible date. Citations are permitted: evidence showing what the corpus does cover substantiates the abstention."
+    },
+    {
+      "id": "ind-06-missing-evidence",
+      "question": "What evidence is missing before the C-101 major overhaul can proceed?",
+      "dimensions": ["missing_information", "multi_document_synthesis"],
+      "expectedStatus": ["PARTIALLY_SUPPORTED", "INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE"],
+      "requireMissingEvidence": true,
+      "requireVerificationItems": true,
+      "mustNotClaimApproval": true,
+      "notes": "Thrust bearing and DE seal cartridge are at zero site stock, internal inspection has never been performed, and no lifting plan exists in the corpus."
+    },
+    {
+      "id": "ind-07-environmental-requirements",
+      "question": "What environmental notification requirements apply to venting during the overhaul?",
+      "dimensions": ["correct_source_retrieval", "citation_support"],
+      "mustRetrieveDocuments": ["ENV-REQ-07"],
+      "mustMentionAny": ["14 days", "500 kg"],
+      "requireCitations": 1,
+      "notes": "Tests retrieval of a document that shares no equipment tag with the question, matching on topic alone."
+    }
+  ]
+}

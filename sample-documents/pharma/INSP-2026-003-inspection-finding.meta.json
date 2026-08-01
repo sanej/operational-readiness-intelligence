@@ -1,0 +1,18 @@
+{
+  "title": "INSP-2026-003 Internal Inspection Finding — Concurrent SOP Revisions",
+  "documentType": "inspection_finding",
+  "revision": "Rev 1",
+  "effectiveDate": "2026-04-15",
+  "authority": "Quality Assurance, Ardley Park Site",
+  "status": "active",
+  "site": "Ardley Park",
+  "equipmentId": "GRN-2100",
+  "line": "Line 2",
+  "sopNumber": "SOP-CL-004",
+  "capaId": "CAPA-2026-019",
+  "deviationId": "DEV-2026-047",
+  "changeControlId": "CC-2026-011",
+  "actionStatus": "open",
+  "severity": "major",
+  "reference": "INSP-2026-003"
+}
