@@ -1,7 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, FileText, TriangleAlert, CircleHelp, ShieldCheck } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  CircleHelp,
+  Clock,
+  FileText,
+  ShieldCheck,
+  TriangleAlert,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EvidenceStatusPanel } from './evidence-status';
 import type { Citation, EvidenceConflict, GroundedAnswer, RetrievedChunk } from '@/core/types';
@@ -73,7 +81,7 @@ function AnswerProse({ text }: { text: string }) {
   flushList('final-l');
   flushParagraph('final-p');
 
-  return <div className="ori-prose text-sm">{blocks}</div>;
+  return <div className="ori-prose text-[14px]">{blocks}</div>;
 }
 
 /** Bold spans only; everything else stays literal text. */
@@ -88,6 +96,31 @@ function inline(text: string): React.ReactNode {
   );
 }
 
+type Tone = 'default' | 'warning' | 'conflict' | 'action';
+
+const TONES: Record<Tone, { wrap: string; icon: string; head: string }> = {
+  default: {
+    wrap: 'border-border bg-surface',
+    icon: 'bg-muted text-muted-foreground',
+    head: 'text-foreground',
+  },
+  warning: {
+    wrap: 'border-[var(--color-partial-border)] bg-[var(--color-partial-bg)]',
+    icon: 'bg-[var(--color-partial)]/15 text-[var(--color-partial)]',
+    head: 'text-[var(--color-partial)]',
+  },
+  conflict: {
+    wrap: 'border-[var(--color-conflicting-border)] bg-[var(--color-conflicting-bg)]',
+    icon: 'bg-[var(--color-conflicting)]/15 text-[var(--color-conflicting)]',
+    head: 'text-[var(--color-conflicting)]',
+  },
+  action: {
+    wrap: 'border-primary-border bg-primary-subtle',
+    icon: 'bg-primary/15 text-primary',
+    head: 'text-primary',
+  },
+};
+
 function Section({
   title,
   icon,
@@ -95,43 +128,60 @@ function Section({
   children,
 }: {
   title: string;
-  icon?: React.ReactNode;
-  tone?: 'default' | 'warning' | 'conflict' | 'action';
+  icon: React.ReactNode;
+  tone?: Tone;
   children: React.ReactNode;
 }) {
-  const toneClass = {
-    default: 'border-border bg-card',
-    warning: 'border-[var(--color-partial)]/30 bg-[var(--color-partial-bg)]',
-    conflict: 'border-[var(--color-conflicting)]/30 bg-[var(--color-conflicting-bg)]',
-    action: 'border-primary/25 bg-accent',
-  }[tone];
-
+  const t = TONES[tone];
   return (
-    <div className={cn('rounded-lg border p-4', toneClass)}>
-      <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
-        {icon}
+    <section className={cn('rounded-xl border p-5', t.wrap)}>
+      <h3 className={cn('mb-3 flex items-center gap-2.5 text-[13px] font-semibold', t.head)}>
+        <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', t.icon)}>
+          {icon}
+        </span>
         {title}
       </h3>
       {children}
-    </div>
+    </section>
+  );
+}
+
+function BulletList({ items }: { items: string[] }) {
+  return (
+    <ul className="space-y-2">
+      {items.map((item, i) => (
+        <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed">
+          <span className="mt-[0.55em] h-1 w-1 shrink-0 rounded-full bg-current opacity-45" />
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 function CitationCard({ citation, index }: { citation: Citation; index: number }) {
-  const provenance = [citation.revision, citation.section, citation.pageNumber ? `p.${citation.pageNumber}` : null]
+  const provenance = [
+    citation.revision,
+    citation.section,
+    citation.pageNumber ? `p.${citation.pageNumber}` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
 
   return (
-    <li className="rounded-md border border-border bg-card p-3">
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary text-[11px] font-semibold text-primary-foreground">
+    <li className="rounded-lg border border-border bg-surface p-4 transition-colors hover:border-border-strong">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground">
           {index + 1}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium leading-snug">{citation.documentTitle ?? citation.documentId}</p>
-          {provenance && <p className="mt-0.5 text-xs text-muted-foreground">{provenance}</p>}
-          <blockquote className="mt-2 border-l-2 border-primary/40 pl-2.5 text-xs italic leading-relaxed text-muted-foreground">
+          <p className="text-[13.5px] font-semibold leading-snug">
+            {citation.documentTitle ?? citation.documentId}
+          </p>
+          {provenance && (
+            <p className="mt-1 text-[11.5px] text-muted-foreground">{provenance}</p>
+          )}
+          <blockquote className="mt-2.5 border-l-2 border-primary/45 pl-3 text-[12.5px] italic leading-relaxed text-muted-foreground">
             &ldquo;{citation.citedContent}&rdquo;
           </blockquote>
         </div>
@@ -152,7 +202,7 @@ function RetrievedChunkRow({ chunk, cited }: { chunk: RetrievedChunk; cited: boo
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-start gap-2 py-2 text-left hover:bg-muted/50"
+        className="flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-muted"
         aria-expanded={open}
       >
         {open ? (
@@ -162,33 +212,37 @@ function RetrievedChunkRow({ chunk, cited }: { chunk: RetrievedChunk; cited: boo
         )}
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-xs font-medium">{chunk.documentTitle ?? chunk.documentId}</span>
+            <span className="text-[12.5px] font-medium">
+              {chunk.documentTitle ?? chunk.documentId}
+            </span>
             {cited && (
-              <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+              <span className="rounded bg-primary/12 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                 cited
               </span>
             )}
             {chunk.documentStatus && chunk.documentStatus !== 'active' && (
-              <span className="rounded bg-[var(--color-partial-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-partial)]">
+              <span className="rounded bg-[var(--color-partial)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-partial)]">
                 {chunk.documentStatus}
               </span>
             )}
           </span>
           {provenance && (
-            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{provenance}</span>
+            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+              {provenance}
+            </span>
           )}
         </span>
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+        <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-muted-foreground">
           {chunk.adjustedScore.toFixed(3)}
         </span>
       </button>
 
       {open && (
-        <div className="pb-3 pl-6 pr-2">
-          <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded border border-border bg-muted/50 p-2.5 text-[11px] leading-relaxed">
+        <div className="animate-ori-rise px-4 pb-4 pl-10">
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-sunken p-3.5 text-[11.5px] leading-relaxed">
             {chunk.content}
           </pre>
-          <p className="mt-1.5 text-[10px] text-muted-foreground">
+          <p className="mt-2 text-[10.5px] text-muted-foreground">
             similarity {chunk.score.toFixed(4)} · after authority ranking{' '}
             {chunk.adjustedScore.toFixed(4)}
             {chunk.effectiveDate ? ` · effective ${chunk.effectiveDate}` : ''}
@@ -199,13 +253,13 @@ function RetrievedChunkRow({ chunk, cited }: { chunk: RetrievedChunk; cited: boo
   );
 }
 
-function ConflictCard({ conflict }: { conflict: EvidenceConflict }) {
+function ConflictItem({ conflict }: { conflict: EvidenceConflict }) {
   return (
-    <li className="text-xs leading-relaxed">
-      <span className="mr-1.5 rounded bg-[var(--color-conflicting)]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+    <li className="flex gap-2.5 text-[13px] leading-relaxed">
+      <span className="mt-px shrink-0 rounded bg-current/12 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
         {conflict.kind === 'revision' ? 'revision' : 'content'}
       </span>
-      {conflict.description}
+      <span>{conflict.description}</span>
     </li>
   );
 }
@@ -213,9 +267,10 @@ function ConflictCard({ conflict }: { conflict: EvidenceConflict }) {
 export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
   const [showEvidence, setShowEvidence] = useState(false);
   const citedChunkIds = new Set(answer.citations.map((c) => c.chunkId));
+  const uncited = answer.retrievedChunks.length - citedChunkIds.size;
 
   return (
-    <div className="space-y-4">
+    <div className="animate-ori-rise space-y-4">
       <EvidenceStatusPanel
         status={answer.evidenceStatus}
         claimedStatus={answer.claimedStatus}
@@ -224,7 +279,7 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
         retrievedCount={answer.retrievedChunks.length}
       />
 
-      <div className="rounded-lg border border-border bg-card p-5">
+      <div className="rounded-xl border border-border bg-surface p-6">
         <AnswerProse text={answer.answer} />
       </div>
 
@@ -234,9 +289,9 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
           icon={<TriangleAlert className="h-3.5 w-3.5" />}
           tone="conflict"
         >
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {answer.conflicts.map((conflict, i) => (
-              <ConflictCard key={i} conflict={conflict} />
+              <ConflictItem key={i} conflict={conflict} />
             ))}
           </ul>
         </Section>
@@ -248,13 +303,7 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
           icon={<CircleHelp className="h-3.5 w-3.5" />}
           tone="warning"
         >
-          <ul className="space-y-1.5">
-            {answer.missingEvidence.map((item, i) => (
-              <li key={i} className="text-xs leading-relaxed">
-                • {item}
-              </li>
-            ))}
-          </ul>
+          <BulletList items={answer.missingEvidence} />
         </Section>
       )}
 
@@ -264,23 +313,20 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
           icon={<ShieldCheck className="h-3.5 w-3.5" />}
           tone="action"
         >
-          <ul className="space-y-1.5">
-            {answer.verificationRequired.map((item, i) => (
-              <li key={i} className="text-xs leading-relaxed">
-                • {item}
-              </li>
-            ))}
-          </ul>
+          <BulletList items={answer.verificationRequired} />
         </Section>
       )}
 
       {answer.citations.length > 0 && (
         <div>
-          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <FileText className="h-3.5 w-3.5" />
-            Citations ({answer.citations.length})
+          <h3 className="mb-3 flex items-center gap-2.5 text-[13px] font-semibold">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/12 text-primary">
+              <FileText className="h-3.5 w-3.5" />
+            </span>
+            Citations
+            <span className="text-muted-foreground">({answer.citations.length} verified)</span>
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-2.5">
             {answer.citations.map((citation, i) => (
               <CitationCard key={citation.id} citation={citation} index={i} />
             ))}
@@ -289,34 +335,37 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
       )}
 
       {answer.warnings.length > 0 && (
-        <Section title="Validation notes" icon={<TriangleAlert className="h-3.5 w-3.5" />} tone="warning">
-          <ul className="space-y-1.5">
-            {answer.warnings.map((warning, i) => (
-              <li key={i} className="text-xs leading-relaxed">
-                • {warning}
-              </li>
-            ))}
-          </ul>
+        <Section
+          title="Validation notes"
+          icon={<TriangleAlert className="h-3.5 w-3.5" />}
+          tone="warning"
+        >
+          <BulletList items={answer.warnings} />
         </Section>
       )}
 
       {answer.retrievedChunks.length > 0 && (
-        <div className="rounded-lg border border-border bg-card">
+        <div className="overflow-hidden rounded-xl border border-border bg-surface">
           <button
             type="button"
             onClick={() => setShowEvidence((v) => !v)}
-            className="flex w-full items-center gap-2 p-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-muted/50"
+            className="flex w-full items-center gap-2.5 px-4 py-3.5 text-left transition-colors hover:bg-muted"
             aria-expanded={showEvidence}
           >
-            {showEvidence ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            Retrieved evidence ({answer.retrievedChunks.length})
-            <span className="ml-auto font-normal normal-case tracking-normal">
-              including {answer.retrievedChunks.length - citedChunkIds.size} not cited
+            {showEvidence ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+            <span className="text-[13px] font-semibold">Retrieved evidence</span>
+            <span className="text-[12px] text-muted-foreground">
+              {answer.retrievedChunks.length} chunks
+              {uncited > 0 ? ` · ${uncited} not cited` : ''}
             </span>
           </button>
 
           {showEvidence && (
-            <ul className="border-t border-border px-3">
+            <ul className="border-t border-border">
               {answer.retrievedChunks.map((chunk) => (
                 <RetrievedChunkRow
                   key={chunk.chunkId}
@@ -329,13 +378,23 @@ export function AnswerPanel({ answer }: { answer: GroundedAnswer }) {
         </div>
       )}
 
-      <p className="text-[11px] text-muted-foreground">
-        {answer.timings.totalMs} ms total · retrieval {answer.timings.retrievalMs} ms · generation{' '}
-        {answer.timings.generationMs} ms
-        {answer.usage?.promptTokens
-          ? ` · ${answer.usage.promptTokens} prompt + ${answer.usage.completionTokens ?? 0} completion tokens`
-          : ''}{' '}
-        · {answer.model}
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[11px] text-muted-foreground">
+        <Clock className="h-3 w-3" />
+        <span className="tabular-nums">{(answer.timings.totalMs / 1000).toFixed(1)}s total</span>
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">retrieval {answer.timings.retrievalMs} ms</span>
+        <span aria-hidden>·</span>
+        <span className="tabular-nums">generation {answer.timings.generationMs} ms</span>
+        {answer.usage?.promptTokens && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="tabular-nums">
+              {answer.usage.promptTokens} + {answer.usage.completionTokens ?? 0} tokens
+            </span>
+          </>
+        )}
+        <span aria-hidden>·</span>
+        <span>{answer.model}</span>
       </p>
     </div>
   );

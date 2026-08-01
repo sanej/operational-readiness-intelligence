@@ -25,6 +25,61 @@ interface UploadResult {
   errors: string[];
 }
 
+/**
+ * Turn a bindings failure into something actionable.
+ *
+ * The raw error names an internal OpenNext function, which tells a user
+ * nothing. The actual cause is almost always that the app is running without
+ * Cloudflare bindings attached, and the fix is a specific command.
+ */
+function friendlyError(message: string): { title: string; detail: string; hint?: string } {
+  if (/getCloudflareContext|initOpenNextCloudflareForDev|bindings unavailable/i.test(message)) {
+    return {
+      title: 'Cloudflare bindings are not attached',
+      detail:
+        'D1, R2, and Vectorize are unavailable, so the corpus cannot be read. This happens when the app runs without the Cloudflare dev bindings.',
+      hint: 'npm run dev  —  or  npm run preview  for the full Workers runtime',
+    };
+  }
+
+  if (/MISTRAL_API_KEY/i.test(message)) {
+    return {
+      title: 'Mistral API key is not set',
+      detail: 'Add MISTRAL_API_KEY to .dev.vars in the project root, then restart the server.',
+      hint: 'echo \'MISTRAL_API_KEY="your-key"\' > .dev.vars',
+    };
+  }
+
+  if (/rate limit/i.test(message)) {
+    return {
+      title: 'Mistral rate limit reached',
+      detail: 'The API is throttling requests. Wait a moment and ask again.',
+    };
+  }
+
+  return { title: 'Something went wrong', detail: message };
+}
+
+function ErrorCard({ message }: { message: string }) {
+  const { title, detail, hint } = friendlyError(message);
+  return (
+    <div className="rounded-xl border border-destructive/25 bg-destructive-subtle p-5">
+      <div className="flex items-start gap-3">
+        <CircleAlert className="mt-0.5 h-4.5 w-4.5 shrink-0 text-destructive" />
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-semibold text-destructive">{title}</p>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-foreground/80">{detail}</p>
+          {hint && (
+            <code className="mt-3 inline-block rounded bg-surface px-2.5 py-1.5 text-[11.5px]">
+              {hint}
+            </code>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [domains, setDomains] = useState<DomainInfo[]>([]);
   const [domainId, setDomainId] = useState('industrial');
@@ -43,6 +98,8 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const domain = domains.find((d) => d.id === domainId);
+  const indexedCount = documents.filter((d) => d.status === 'indexed').length;
+  const chunkTotal = documents.reduce((sum, d) => sum + d.chunkCount, 0);
 
   useEffect(() => {
     fetch('/api/domains')
@@ -150,28 +207,36 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-5 py-6">
-      <header className="mb-6 border-b border-border pb-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">
-              ORI <span className="font-normal text-muted-foreground">· Operational Readiness Intelligence</span>
-            </h1>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              Grounded, cited answers from operational, quality, safety, and compliance documents.
-              ORI supports human review — it does not approve equipment, work, or release.
-            </p>
+    <div className="min-h-screen">
+      {/* ---------------------------------------------------------------- */}
+      <header className="border-b border-border bg-surface">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-4 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-[11px] font-bold text-primary-foreground">
+              ORI
+            </span>
+            <div>
+              <h1 className="text-[15px] font-semibold leading-tight">
+                Operational Readiness Intelligence
+              </h1>
+              <p className="mt-0.5 text-[12px] leading-tight text-muted-foreground">
+                Grounded, cited answers — supports human review, does not approve work
+              </p>
+            </div>
           </div>
 
-          <div>
-            <label htmlFor="domain" className="mb-1 block text-[11px] font-medium text-muted-foreground">
+          <div className="flex items-center gap-2.5">
+            <label
+              htmlFor="domain"
+              className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
               Domain
             </label>
             <select
               id="domain"
               value={domainId}
               onChange={(e) => handleDomainChange(e.target.value)}
-              className="rounded-md border border-input bg-card px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="rounded-lg border border-input bg-surface px-3 py-2 text-[13px] font-medium transition-colors hover:border-border-strong focus:outline-none focus:ring-2 focus:ring-ring/40"
             >
               {domains.length === 0 && <option value="industrial">Loading…</option>}
               {domains.map((d) => (
@@ -184,176 +249,186 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        {/* ---------------------------------------------------------------- */}
-        <aside className="space-y-5">
-          <section>
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Upload documents
-            </h2>
-
-            <label
-              className={cn(
-                'flex cursor-pointer flex-col items-center rounded-md border border-dashed border-border bg-card px-4 py-5 text-center transition-colors hover:border-primary/50 hover:bg-accent',
-                uploading && 'pointer-events-none opacity-60'
-              )}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="sr-only"
-                accept=".pdf,.png,.jpg,.jpeg,.docx,.pptx,.md,.txt,.csv,.json"
-                onChange={(e) => void handleUpload(e.target.files)}
-                disabled={uploading}
-              />
-              {uploading ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  <span className="mt-2 text-xs font-medium">Extracting and indexing…</span>
-                  <span className="mt-0.5 text-[11px] text-muted-foreground">
-                    PDFs go through Mistral OCR — this can take a minute.
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Upload className="h-5 w-5 text-muted-foreground" />
-                  <span className="mt-2 text-xs font-medium">Choose files</span>
-                  <span className="mt-0.5 text-[11px] text-muted-foreground">
-                    PDF, images, Office, Markdown, CSV, JSON
-                  </span>
-                </>
-              )}
-            </label>
-
-            {uploadResults && (
-              <ul className="mt-2 space-y-1">
-                {uploadResults.map((result, i) => (
-                  <li
-                    key={i}
-                    className={cn(
-                      'rounded border px-2 py-1.5 text-[11px]',
-                      result.success
-                        ? 'border-[var(--color-supported)]/25 bg-[var(--color-supported-bg)] text-[var(--color-supported)]'
-                        : 'border-destructive/25 bg-destructive/5 text-destructive'
-                    )}
-                  >
-                    <span className="font-medium">{result.fileName}</span>{' '}
-                    {result.success
-                      ? result.duplicate
-                        ? '— already indexed'
-                        : `— ${result.chunkCount} chunks${result.extractionMethod === 'ocr' ? ' via OCR' : ''}`
-                      : `— ${result.errors[0] ?? 'failed'}`}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section>
-            <div className="mb-2 flex items-baseline justify-between">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Corpus
+      {/* ---------------------------------------------------------------- */}
+      <main className="mx-auto max-w-[1400px] px-6 py-6">
+        <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+          {/* ------------------------------------------------------------ */}
+          <aside className="space-y-5">
+            <section>
+              <h2 className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Add documents
               </h2>
-              {domain && <span className="text-[11px] text-muted-foreground">{domain.corpusId}</span>}
-            </div>
-            <DocumentList documents={documents} loading={documentsLoading} error={documentsError} />
-          </section>
-        </aside>
 
-        {/* ---------------------------------------------------------------- */}
-        <section className="min-w-0 space-y-5">
-          <div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void handleAsk();
-              }}
-              className="flex gap-2"
-            >
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder={
-                    domain
-                      ? `Ask about ${domain.displayName.toLowerCase()}…`
-                      : 'Ask an operational-readiness question…'
-                  }
-                  className="w-full rounded-md border border-input bg-card py-2.5 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  disabled={asking}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={asking || !question.trim()}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+              <label
+                className={cn(
+                  'flex cursor-pointer flex-col items-center rounded-xl border border-dashed border-border-strong bg-surface px-4 py-6 text-center transition-colors hover:border-primary/50 hover:bg-primary-subtle',
+                  uploading && 'pointer-events-none opacity-60'
+                )}
               >
-                {asking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {asking ? 'Analysing' : 'Ask'}
-              </button>
-            </form>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  accept=".pdf,.png,.jpg,.jpeg,.docx,.pptx,.md,.txt,.csv,.json"
+                  onChange={(e) => void handleUpload(e.target.files)}
+                  disabled={uploading}
+                />
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <span className="mt-2.5 text-[13px] font-medium">Extracting and indexing…</span>
+                    <span className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                      PDFs go through Mistral OCR
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-5 w-5 text-muted-foreground" />
+                    <span className="mt-2.5 text-[13px] font-medium">Choose files</span>
+                    <span className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                      PDF · images · Office · Markdown · CSV · JSON
+                    </span>
+                  </>
+                )}
+              </label>
 
-            {domain && domain.queryExamples.length > 0 && !answer && !asking && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {domain.queryExamples.map((example) => (
-                  <button
-                    key={example.id}
-                    type="button"
-                    onClick={() => void handleAsk(example.question)}
-                    className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-foreground"
-                  >
-                    {example.question}
-                  </button>
-                ))}
+              {uploadResults && (
+                <ul className="mt-2 space-y-1.5">
+                  {uploadResults.map((result, i) => (
+                    <li
+                      key={i}
+                      className={cn(
+                        'rounded-lg border px-2.5 py-2 text-[11.5px] leading-relaxed',
+                        result.success
+                          ? 'border-[var(--color-supported-border)] bg-[var(--color-supported-bg)] text-[var(--color-supported)]'
+                          : 'border-destructive/25 bg-destructive-subtle text-destructive'
+                      )}
+                    >
+                      <span className="font-semibold">{result.fileName}</span>{' '}
+                      {result.success
+                        ? result.duplicate
+                          ? '— already indexed'
+                          : `— ${result.chunkCount} chunks${result.extractionMethod === 'ocr' ? ' via OCR' : ''}`
+                        : `— ${result.errors[0] ?? 'failed'}`}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section>
+              <div className="mb-2.5 flex items-baseline justify-between gap-2">
+                <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Corpus
+                </h2>
+                {!documentsLoading && !documentsError && documents.length > 0 && (
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {indexedCount} docs · {chunkTotal} chunks
+                  </span>
+                )}
+              </div>
+              <DocumentList
+                documents={documents}
+                loading={documentsLoading}
+                error={documentsError}
+              />
+            </section>
+          </aside>
+
+          {/* ------------------------------------------------------------ */}
+          <section className="min-w-0 space-y-5">
+            <div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleAsk();
+                }}
+                className="flex gap-2.5"
+              >
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={
+                      domain
+                        ? `Ask about ${domain.displayName.toLowerCase()}…`
+                        : 'Ask an operational-readiness question…'
+                    }
+                    className="w-full rounded-xl border border-input bg-surface py-3 pl-10 pr-4 text-[14px] transition-colors placeholder:text-muted-foreground hover:border-border-strong focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-ring/25"
+                    disabled={asking}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={asking || !question.trim()}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-[14px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-45"
+                >
+                  {asking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {asking ? 'Analysing' : 'Ask'}
+                </button>
+              </form>
+
+              {domain && domain.queryExamples.length > 0 && !answer && !asking && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {domain.queryExamples.map((example) => (
+                    <button
+                      key={example.id}
+                      type="button"
+                      onClick={() => void handleAsk(example.question)}
+                      className="rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground transition-colors hover:border-primary/45 hover:bg-primary-subtle hover:text-foreground"
+                    >
+                      {example.question}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {asking && (
+              <div className="space-y-4" aria-busy="true">
+                <div className="animate-ori-pulse rounded-xl border border-border bg-surface p-5">
+                  <div className="h-6 w-40 rounded-full bg-muted" />
+                  <div className="mt-3 h-3 w-72 rounded bg-muted" />
+                </div>
+                <div className="animate-ori-pulse rounded-xl border border-border bg-surface p-6">
+                  <div className="h-3 w-24 rounded bg-muted" />
+                  <div className="mt-4 h-3 w-full rounded bg-muted" />
+                  <div className="mt-2.5 h-3 w-11/12 rounded bg-muted" />
+                  <div className="mt-2.5 h-3 w-4/5 rounded bg-muted" />
+                  <div className="mt-2.5 h-3 w-2/3 rounded bg-muted" />
+                </div>
+                <p className="px-1 text-[12px] leading-relaxed text-muted-foreground">
+                  Retrieving evidence, generating a grounded answer, and validating every citation
+                  against the retrieved chunks. This usually takes 20–60 seconds.
+                </p>
               </div>
             )}
-          </div>
 
-          {asking && (
-            <div className="space-y-3" aria-busy="true">
-              <div className="animate-ori-pulse rounded-lg border border-border bg-muted/40 p-4">
-                <div className="h-4 w-40 rounded bg-muted" />
+            {askError && <ErrorCard message={askError} />}
+
+            {answer && !asking && <AnswerPanel answer={answer} />}
+
+            {!answer && !asking && !askError && (
+              <div className="rounded-xl border border-dashed border-border-strong px-8 py-14 text-center">
+                <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-primary-subtle">
+                  <Search className="h-5 w-5 text-primary" />
+                </span>
+                <p className="mt-4 text-[15px] font-semibold">
+                  Ask an operational-readiness question
+                </p>
+                <p className="mx-auto mt-2 max-w-lg text-[13px] leading-relaxed text-muted-foreground">
+                  Every answer returns an evidence status, citations checked against the retrieved
+                  source text, the evidence that was retrieved but not cited, and what a qualified
+                  person must still verify.
+                </p>
               </div>
-              <div className="animate-ori-pulse rounded-lg border border-border bg-muted/40 p-5">
-                <div className="h-3 w-full rounded bg-muted" />
-                <div className="mt-2.5 h-3 w-11/12 rounded bg-muted" />
-                <div className="mt-2.5 h-3 w-4/5 rounded bg-muted" />
-                <div className="mt-2.5 h-3 w-2/3 rounded bg-muted" />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Retrieving evidence, generating a grounded answer, and validating every citation
-                against the retrieved chunks.
-              </p>
-            </div>
-          )}
-
-          {askError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <p className="flex items-start gap-2 text-sm text-destructive">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{askError}</span>
-              </p>
-            </div>
-          )}
-
-          {answer && !asking && <AnswerPanel answer={answer} />}
-
-          {!answer && !asking && !askError && (
-            <div className="rounded-lg border border-dashed border-border p-10 text-center">
-              <Search className="mx-auto h-7 w-7 text-muted-foreground/40" />
-              <p className="mt-3 text-sm font-medium">Ask an operational-readiness question</p>
-              <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-muted-foreground">
-                Every answer returns an evidence status, citations checked against the retrieved
-                source text, the evidence that was retrieved but not cited, and what a qualified
-                person must still verify.
-              </p>
-            </div>
-          )}
-        </section>
-      </div>
-    </main>
+            )}
+          </section>
+        </div>
+      </main>
+    </div>
   );
 }

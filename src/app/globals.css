@@ -3,69 +3,102 @@
 /*
  * ORI design tokens.
  *
- * The evidence-status colours are the load-bearing part of this palette: a
- * reviewer should be able to tell at a glance whether an answer is grounded,
- * partial, contradicted, or unsupported. They are deliberately distinct in
- * hue rather than only in lightness, so the distinction survives greyscale
- * printing and the most common forms of colour vision deficiency.
+ * Warm neutral canvas, deep slate ink, one amber accent. The amber sits
+ * between Cloudflare's orange and Mistral's warmer tone deliberately — it
+ * should read as this product rather than as either vendor's brand.
+ *
+ * The evidence-status colours are the load-bearing part of the palette: a
+ * reviewer must be able to tell at a glance whether an answer is grounded,
+ * partial, contradicted, or unsupported. They are distinct in hue rather than
+ * only in lightness, so the distinction survives greyscale printing and the
+ * common forms of colour vision deficiency.
  */
 @theme {
-  --color-background: oklch(0.99 0.002 250);
-  --color-foreground: oklch(0.21 0.015 255);
-  --color-card: oklch(1 0 0);
-  --color-card-foreground: oklch(0.21 0.015 255);
-  --color-muted: oklch(0.965 0.005 250);
-  --color-muted-foreground: oklch(0.51 0.015 255);
-  --color-border: oklch(0.915 0.008 255);
-  --color-input: oklch(0.915 0.008 255);
+  /* surfaces */
+  --color-background: oklch(0.985 0.004 85);
+  --color-surface: oklch(1 0 0);
+  --color-surface-sunken: oklch(0.968 0.006 85);
+  --color-foreground: oklch(0.24 0.014 265);
+  --color-muted: oklch(0.955 0.007 85);
+  --color-muted-foreground: oklch(0.53 0.016 265);
+  --color-border: oklch(0.915 0.008 85);
+  --color-border-strong: oklch(0.86 0.012 85);
+  --color-input: oklch(0.9 0.009 85);
 
-  --color-primary: oklch(0.47 0.13 245);
+  /* accent */
+  --color-primary: oklch(0.63 0.155 55);
+  --color-primary-hover: oklch(0.58 0.16 52);
   --color-primary-foreground: oklch(0.99 0 0);
-  --color-secondary: oklch(0.965 0.005 250);
-  --color-secondary-foreground: oklch(0.28 0.02 255);
-  --color-accent: oklch(0.955 0.012 245);
-  --color-accent-foreground: oklch(0.28 0.02 255);
-  --color-destructive: oklch(0.55 0.2 27);
-  --color-destructive-foreground: oklch(0.99 0 0);
-  --color-ring: oklch(0.47 0.13 245);
+  --color-primary-subtle: oklch(0.955 0.032 70);
+  --color-primary-border: oklch(0.86 0.07 65);
+  --color-ring: oklch(0.63 0.155 55);
 
-  /* Evidence statuses */
-  --color-supported: oklch(0.52 0.13 155);
-  --color-supported-bg: oklch(0.96 0.03 155);
-  --color-partial: oklch(0.58 0.13 75);
-  --color-partial-bg: oklch(0.96 0.045 85);
-  --color-conflicting: oklch(0.52 0.17 315);
-  --color-conflicting-bg: oklch(0.96 0.03 315);
-  --color-insufficient: oklch(0.52 0.02 255);
-  --color-insufficient-bg: oklch(0.955 0.005 255);
+  --color-secondary: oklch(0.955 0.007 85);
+  --color-secondary-foreground: oklch(0.3 0.016 265);
+  --color-accent: oklch(0.962 0.018 70);
+  --color-accent-foreground: oklch(0.3 0.016 265);
+  --color-destructive: oklch(0.55 0.19 27);
+  --color-destructive-foreground: oklch(0.99 0 0);
+  --color-destructive-subtle: oklch(0.96 0.03 25);
+
+  /* evidence statuses */
+  --color-supported: oklch(0.5 0.115 158);
+  --color-supported-bg: oklch(0.962 0.032 160);
+  --color-supported-border: oklch(0.86 0.06 160);
+
+  --color-partial: oklch(0.56 0.13 72);
+  --color-partial-bg: oklch(0.962 0.042 80);
+  --color-partial-border: oklch(0.86 0.075 78);
+
+  --color-conflicting: oklch(0.51 0.155 318);
+  --color-conflicting-bg: oklch(0.958 0.03 318);
+  --color-conflicting-border: oklch(0.86 0.06 318);
+
+  --color-insufficient: oklch(0.5 0.016 265);
+  --color-insufficient-bg: oklch(0.955 0.006 265);
+  --color-insufficient-border: oklch(0.88 0.01 265);
 }
 
 @media (prefers-color-scheme: dark) {
   @theme {
-    --color-background: oklch(0.17 0.012 255);
-    --color-foreground: oklch(0.95 0.005 250);
-    --color-card: oklch(0.21 0.014 255);
-    --color-card-foreground: oklch(0.95 0.005 250);
-    --color-muted: oklch(0.25 0.014 255);
-    --color-muted-foreground: oklch(0.68 0.012 255);
-    --color-border: oklch(0.3 0.015 255);
-    --color-input: oklch(0.3 0.015 255);
+    --color-background: oklch(0.185 0.01 265);
+    --color-surface: oklch(0.225 0.012 265);
+    --color-surface-sunken: oklch(0.205 0.011 265);
+    --color-foreground: oklch(0.95 0.005 85);
+    --color-muted: oklch(0.265 0.013 265);
+    --color-muted-foreground: oklch(0.7 0.012 265);
+    --color-border: oklch(0.31 0.014 265);
+    --color-border-strong: oklch(0.38 0.016 265);
+    --color-input: oklch(0.32 0.014 265);
 
-    --color-primary: oklch(0.68 0.13 245);
-    --color-primary-foreground: oklch(0.17 0.012 255);
-    --color-secondary: oklch(0.26 0.015 255);
-    --color-secondary-foreground: oklch(0.93 0.005 250);
-    --color-accent: oklch(0.28 0.02 245);
-    --color-accent-foreground: oklch(0.93 0.005 250);
+    --color-primary: oklch(0.72 0.145 60);
+    --color-primary-hover: oklch(0.77 0.14 62);
+    --color-primary-foreground: oklch(0.19 0.01 265);
+    --color-primary-subtle: oklch(0.29 0.05 62);
+    --color-primary-border: oklch(0.42 0.08 60);
 
-    --color-supported: oklch(0.75 0.15 155);
-    --color-supported-bg: oklch(0.28 0.05 155);
-    --color-partial: oklch(0.79 0.14 85);
-    --color-partial-bg: oklch(0.3 0.05 80);
-    --color-conflicting: oklch(0.75 0.15 315);
-    --color-conflicting-bg: oklch(0.29 0.06 315);
-    --color-insufficient: oklch(0.72 0.015 255);
-    --color-insufficient-bg: oklch(0.26 0.01 255);
+    --color-secondary: oklch(0.27 0.013 265);
+    --color-secondary-foreground: oklch(0.93 0.005 85);
+    --color-accent: oklch(0.28 0.025 62);
+    --color-accent-foreground: oklch(0.93 0.005 85);
+    --color-destructive: oklch(0.68 0.17 27);
+    --color-destructive-subtle: oklch(0.28 0.06 25);
+
+    --color-supported: oklch(0.75 0.14 160);
+    --color-supported-bg: oklch(0.275 0.048 160);
+    --color-supported-border: oklch(0.38 0.07 160);
+
+    --color-partial: oklch(0.79 0.13 82);
+    --color-partial-bg: oklch(0.29 0.05 78);
+    --color-partial-border: oklch(0.4 0.07 78);
+
+    --color-conflicting: oklch(0.76 0.13 318);
+    --color-conflicting-bg: oklch(0.285 0.055 318);
+    --color-conflicting-border: oklch(0.39 0.075 318);
+
+    --color-insufficient: oklch(0.72 0.014 265);
+    --color-insufficient-bg: oklch(0.26 0.01 265);
+    --color-insufficient-border: oklch(0.36 0.012 265);
   }
 }
 
@@ -73,43 +106,60 @@ body {
   background: var(--color-background);
   color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Answer prose. The model returns Markdown-ish text rendered as plain blocks;
-   these rules keep headings and lists legible without a Markdown dependency. */
+/* Answer prose. The model returns lightly-marked-up text rendered as plain
+   blocks; these rules give it a real reading hierarchy without a Markdown
+   dependency. */
 .ori-prose h2 {
-  font-size: 0.8125rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-muted-foreground);
-  margin-top: 1.5rem;
-  margin-bottom: 0.5rem;
+  letter-spacing: 0.07em;
+  color: var(--color-primary);
+  margin-top: 1.75rem;
+  margin-bottom: 0.6rem;
 }
 .ori-prose h2:first-child {
   margin-top: 0;
 }
 .ori-prose h3 {
   font-size: 0.9375rem;
-  font-weight: 600;
-  margin-top: 1rem;
-  margin-bottom: 0.375rem;
+  font-weight: 650;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+  color: var(--color-foreground);
 }
 .ori-prose p {
-  margin-bottom: 0.75rem;
-  line-height: 1.65;
+  margin-bottom: 0.8rem;
+  line-height: 1.7;
 }
 .ori-prose ul {
-  margin-bottom: 0.75rem;
-  padding-left: 1.125rem;
-  list-style: disc;
+  margin-bottom: 0.8rem;
+  padding-left: 0.2rem;
+  list-style: none;
 }
 .ori-prose li {
-  margin-bottom: 0.3125rem;
-  line-height: 1.6;
+  position: relative;
+  margin-bottom: 0.45rem;
+  padding-left: 1rem;
+  line-height: 1.65;
+}
+.ori-prose li::before {
+  content: "";
+  position: absolute;
+  left: 0.05rem;
+  top: 0.62em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.55;
 }
 .ori-prose strong {
-  font-weight: 600;
+  font-weight: 650;
+  color: var(--color-foreground);
 }
 .ori-prose > *:last-child {
   margin-bottom: 0;
@@ -117,8 +167,16 @@ body {
 
 @keyframes ori-pulse {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  50% { opacity: 0.4; }
 }
 .animate-ori-pulse {
-  animation: ori-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: ori-pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes ori-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-ori-rise {
+  animation: ori-rise 0.28s ease-out both;
 }
