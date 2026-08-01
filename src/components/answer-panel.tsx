@@ -159,6 +159,25 @@ function BulletList({ items }: { items: string[] }) {
   );
 }
 
+/**
+ * Strip source Markdown from a quoted passage.
+ *
+ * Quotes are verbatim by design — that is what makes them checkable against
+ * the retrieved chunk — so when the source is Markdown the quote carries its
+ * `##` headings and `**` emphasis along with it. Correct data, poor reading.
+ * Only presentation markers are removed; every word is left intact, so the
+ * displayed quote still corresponds to the text that was verified.
+ */
+function tidyQuote(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/(^|\s)\*([^*\s][^*]*)\*(?=\s|$)/g, '$1$2')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function CitationCard({ citation, index }: { citation: Citation; index: number }) {
   const provenance = [
     citation.revision,
@@ -182,7 +201,7 @@ function CitationCard({ citation, index }: { citation: Citation; index: number }
             <p className="mt-1 text-[11.5px] text-muted-foreground">{provenance}</p>
           )}
           <blockquote className="mt-2.5 border-l-2 border-primary/45 pl-3 text-[12.5px] italic leading-relaxed text-muted-foreground">
-            &ldquo;{citation.citedContent}&rdquo;
+            &ldquo;{tidyQuote(citation.citedContent)}&rdquo;
           </blockquote>
         </div>
       </div>
