@@ -1,10 +1,19 @@
 # ORI — Operational Readiness Intelligence
 
-**Grounded, cited answers from operational, quality, safety, and compliance documents.**
+**A grounded question-answering system over operational, quality, safety, and compliance
+documents — with a readiness-assessment specialisation on top.**
 
-ORI helps a qualified person decide whether a planned activity can proceed, by assembling
-the evidence for and against it from the controlled document set — and by being explicit
-about what the evidence does *not* establish.
+Ask it anything about the corpus and you get a direct, cited answer. Ask it whether work
+can proceed and it switches into a fuller assessment: what the evidence establishes, what
+is outstanding, what conflicts, and what a qualified person must still verify.
+
+The layering matters and is deliberate:
+
+| Layer | What it is |
+|---|---|
+| **Foundation** | General question answering. Every answer is grounded in retrieved evidence and cited. |
+| **Guarantee** | Citations are verified against the retrieved text, and the evidence status is capped by what survives. |
+| **Specialisation** | Readiness, conflict, and synthesis modes, selected by query intent. |
 
 ORI does not approve anything. It never states or implies that equipment, work, production,
 a batch, or a regulated process is approved, released, or compliant. That decision belongs
@@ -315,6 +324,25 @@ deterministically. During development the model missed exactly this case and str
 detection caught it — which is why retrieval also runs a *counterpart-revision pass*: if a
 selected chunk's document has a competing active revision, that revision's best chunk is
 pulled in, so the contradiction is visible rather than luck-dependent.
+
+**General Q&A is the default; readiness is a specialisation.**
+The first build applied the readiness structure to every question. Asking "which are the
+critical failure paths?" returned a six-section report — summary, outstanding items,
+conflicts, missing evidence, verification — when the question wanted a list. Worse, the
+retrieved set contained two competing revisions of an unrelated isolation procedure, so the
+answer came back `CONFLICTING_EVIDENCE` at 0.60 confidence for a question the conflict had
+no bearing on.
+
+A keyword classifier now routes each question to one of `GENERAL_QA`, `SYNTHESIS`,
+`CONFLICT_CHECK`, or `READINESS_ASSESSMENT`, which selects the answer's section structure
+and the instructions layered onto the domain prompt. The same question now returns
+`SUPPORTED` at 0.98 with a two-section answer.
+
+Rules rather than a model call, because the blast radius is formatting: intent does not
+touch retrieval, generation, or the citation guarantee, so a misclassification costs a
+slightly ill-fitting shape, never a wrong fact. The bias is toward the narrower structure —
+a readiness question answered in general-QA shape still surfaces the evidence and the
+conflicts, while a factual lookup answered as a report buries the answer.
 
 **Conflicts are filtered by materiality.**
 Two revisions of an isolation procedure are retrieved for almost any question about the asset

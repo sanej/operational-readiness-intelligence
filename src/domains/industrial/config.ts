@@ -51,14 +51,29 @@ export const industrialPack: DomainPack = {
 
   systemPrompt: industrialSystemPrompt,
 
-  answerStructure: [
-    'Summary of what the evidence shows',
-    'Supporting evidence and requirements',
-    'Outstanding items and unresolved actions',
-    'Conflicting or superseded documents',
-    'Missing evidence',
-    'What must be verified by a qualified person before proceeding',
-  ],
+  answerStructure: {
+    // A factual question gets an answer, not a report. Anything longer buries
+    // the thing that was asked for.
+    GENERAL_QA: ['Answer', 'Supporting evidence'],
+
+    SYNTHESIS: ['Summary', 'Findings by source', 'Gaps in the record'],
+
+    CONFLICT_CHECK: [
+      'Whether the sources agree',
+      'What each source states',
+      'Which revision is authoritative',
+      'What must be resolved',
+    ],
+
+    READINESS_ASSESSMENT: [
+      'Summary of what the evidence shows',
+      'Supporting evidence and requirements',
+      'Outstanding items and unresolved actions',
+      'Conflicting or superseded documents',
+      'Missing evidence',
+      'What must be verified by a qualified person before proceeding',
+    ],
+  },
 
   queryExamples: industrialQueryExamples,
 

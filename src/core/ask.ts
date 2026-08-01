@@ -18,6 +18,7 @@ import { validateCitations, type ClaimedCitation } from './citations/validate';
 import { EmbeddingService } from './embeddings/mistral';
 import { GenerationService } from './generation/generate';
 import { newId } from './ids';
+import { classifyIntent } from './generation/intent';
 import { detectRevisionConflicts, documentSubject, RetrievalService } from './retrieval/retrieve';
 import { Storage } from './storage';
 import type {
@@ -34,6 +35,30 @@ export interface AskInput {
   filters?: RetrievalFilters;
   /** Skip the D1 write — used by the eval harness to avoid polluting history. */
   persist?: boolean;
+}
+
+/**
+ * Reduce a section label to the subject it names, so the same section of two
+ * revisions compares equal.
+ *
+ * Headings carry their document title and numbering — "SP-204 Energy Isolation
+ * (Revised) > 2. Isolation Requirements" versus "SP-204 Energy Isolation >
+ * 2. Isolation Requirements". Taking the last path segment and stripping the
+ * leading number leaves "isolation requirements" on both sides.
+ */
+function normaliseSection(section: string | undefined): string | undefined {
+  if (!section) return undefined;
+
+  const leaf = section.split('>').pop()?.trim();
+  if (!leaf) return undefined;
+
+  const subject = leaf
+    .replace(/^\d+(\.\d+)*\.?\s*/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, '')
+    .trim();
+
+  return subject.length > 2 ? subject : undefined;
 }
 
 export class AskPipeline {
@@ -66,6 +91,10 @@ export class AskPipeline {
 
     const topK = input.topK ?? this.pack.defaultTopK ?? this.config.retrieval.defaultTopK;
 
+    // Intent selects the answer's shape and the instructions layered onto the
+    // domain prompt. It does not touch retrieval or the citation guarantee.
+    const { intent } = classifyIntent(input.question);
+
     // -- 1. retrieve ---------------------------------------------------------
     const retrieved = await this.retrieval.retrieve({
       corpusId: input.corpusId,
@@ -97,6 +126,7 @@ export class AskPipeline {
         verificationRequired: [
           'Confirm the relevant documents have been uploaded and indexed for this corpus.',
         ],
+        intent,
         warnings: [],
         timings: {
           retrievalMs: retrieved.latencyMs,
@@ -141,7 +171,14 @@ export class AskPipeline {
       input.question,
       retrieved.chunks,
       this.pack,
-      structuralConflicts
+      // Only tell the model about structural conflicts when the question is
+      // about readiness or about conflict itself. On a factual lookup, an
+      // unrelated competing revision is a distraction that pulls the answer
+      // away from what was asked.
+      intent === 'READINESS_ASSESSMENT' || intent === 'CONFLICT_CHECK'
+        ? structuralConflicts
+        : [],
+      intent
     );
 
     // Merge the model's semantic conflicts with the structural ones. Structural
@@ -191,26 +228,48 @@ export class AskPipeline {
     // any question about the asset they cover; reporting a conflict every time
     // makes the signal worthless, because a warning that fires on routine
     // questions is one a reviewer learns to dismiss.
-    //
-    // The test is whether both sides are genuinely *engaged* by the question:
-    // either the answer cited both, or both rank near the top of the retrieved
-    // set — which means the question is about the contested subject matter,
-    // whether or not the model chose to quote each side.
     const citedDocumentIds = new Set(preliminary.citations.map((c) => c.documentId));
+
+    // Which sections of each document the answer actually drew on. Two
+    // revisions cited for *different* sections are not contradicting each
+    // other — "Rev 7 §2.3 requires seal gas isolation" and "Rev 6 §4 lists the
+    // permits" are both true and unrelated. They conflict only where they
+    // cover the same ground.
+    const citedSectionsByDocument = new Map<string, Set<string>>();
+    for (const citation of preliminary.citations) {
+      const section = normaliseSection(citation.section);
+      if (!section) continue;
+      const set = citedSectionsByDocument.get(citation.documentId) ?? new Set<string>();
+      set.add(section);
+      citedSectionsByDocument.set(citation.documentId, set);
+    }
 
     const materialStructuralConflicts = structuralConflicts.filter((conflict) => {
       // Nothing was cited at all: no signal either way, and the corpus
       // inconsistency still stands, so surface it.
       if (citedDocumentIds.size === 0) return true;
 
-      // Both sides informed the answer — it genuinely rests on contradictory
-      // sources, so the reader must be told. One side only means the two
-      // revisions were both retrieved (as they are for almost any question
-      // about the asset they cover) but the answer did not turn on where they
-      // differ. Retrieval position is not evidence of relevance here: long
-      // procedures rank highly on topic alone.
-      const citedSides = conflict.documentIds.filter((id) => citedDocumentIds.has(id)).length;
-      return citedSides >= 2;
+      const citedSides = conflict.documentIds.filter((id) => citedDocumentIds.has(id));
+
+      // One side or neither: the answer did not turn on where they differ.
+      if (citedSides.length < 2) return false;
+
+      // Both sides cited — but on the same subject matter? A readiness review
+      // legitimately draws on several sections of both revisions, so require
+      // an overlapping section only outside that intent, where a narrow
+      // question should produce a narrow conflict claim.
+      if (intent === 'READINESS_ASSESSMENT') return true;
+
+      const sectionSets = citedSides
+        .map((id) => citedSectionsByDocument.get(id))
+        .filter((s): s is Set<string> => Boolean(s));
+
+      // No section provenance to compare: fall back to co-citation.
+      if (sectionSets.length < 2) return true;
+
+      return sectionSets.some((set, i) =>
+        sectionSets.some((other, j) => i !== j && [...set].some((s) => other.has(s)))
+      );
     });
 
     // The same standard applies to the model's own conflict claims. It will
@@ -277,6 +336,7 @@ export class AskPipeline {
       missingEvidence,
       conflicts,
       verificationRequired,
+      intent,
       warnings: validated.warnings,
       timings: {
         retrievalMs: retrieved.latencyMs,

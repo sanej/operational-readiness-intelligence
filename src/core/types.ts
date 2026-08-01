@@ -31,6 +31,32 @@ export function isEvidenceStatus(value: unknown): value is EvidenceStatus {
 }
 
 // ===========================================================================
+// Query intent
+// ===========================================================================
+
+/**
+ * What the user is actually asking for.
+ *
+ * A readiness assessment and a factual lookup need different answers. Asking
+ * "what is the OEM vent-flow threshold?" and receiving a blockers-and-
+ * verification report is not thoroughness — it buries the answer, and it
+ * trains the reader to skim the sections that matter when the question *is*
+ * about readiness.
+ *
+ * Intent selects the answer structure and the instructions layered onto the
+ * domain prompt. It does not change retrieval, generation, or the citation
+ * guarantee: every intent is grounded and cited identically.
+ */
+export const QUERY_INTENTS = [
+  'GENERAL_QA',
+  'SYNTHESIS',
+  'CONFLICT_CHECK',
+  'READINESS_ASSESSMENT',
+] as const;
+
+export type QueryIntent = (typeof QUERY_INTENTS)[number];
+
+// ===========================================================================
 // Documents and chunks
 // ===========================================================================
 
@@ -203,6 +229,8 @@ export interface GroundedAnswer {
   conflicts: EvidenceConflict[];
   /** What a human must confirm before acting. Never empty for a real decision. */
   verificationRequired: string[];
+  /** How the question was classified; selects the answer's shape. */
+  intent: QueryIntent;
   warnings: string[];
   timings: { retrievalMs: number; generationMs: number; totalMs: number };
   usage?: { promptTokens?: number; completionTokens?: number };
@@ -291,8 +319,14 @@ export interface DomainPack {
   /** The domain's grounding and safety instructions. */
   systemPrompt: string;
 
-  /** Section headings the answer should follow, in order. */
-  answerStructure: string[];
+  /**
+   * Section headings per intent, in order.
+   *
+   * The full readiness structure belongs to READINESS_ASSESSMENT. A factual
+   * lookup gets a short structure, so the answer is the answer rather than a
+   * report with the answer inside it.
+   */
+  answerStructure: Record<QueryIntent, string[]>;
 
   /** Representative questions surfaced in the UI. */
   queryExamples: QueryExample[];

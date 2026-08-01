@@ -385,11 +385,11 @@ export class D1Store {
     await this.db
       .prepare(
         `INSERT INTO questions (
-           id, corpus_id, domain, question, answer, evidence_status, claimed_status,
+           id, corpus_id, domain, question, answer, intent, evidence_status, claimed_status,
            confidence, missing_evidence, conflicts, verification_required,
            retrieved_chunks, warnings, retrieval_ms, generation_ms, total_ms,
            prompt_tokens, completion_tokens, model, created_at
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .bind(
         answer.id,
@@ -397,6 +397,7 @@ export class D1Store {
         answer.domain,
         answer.question,
         answer.answer,
+        answer.intent,
         answer.evidenceStatus,
         answer.claimedStatus ?? null,
         answer.confidence,

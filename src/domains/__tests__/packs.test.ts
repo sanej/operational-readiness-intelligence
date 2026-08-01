@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { DOMAIN_PACKS, getDomainPack, listDomains } from '..';
-import { EVIDENCE_STATUSES } from '../../core/types';
+import { EVIDENCE_STATUSES, QUERY_INTENTS } from '../../core/types';
 import industrialEvals from '../industrial/evals.json';
 import pharmaEvals from '../pharma/evals.json';
 
@@ -32,7 +32,14 @@ describe.each(packs)('$id pack', (pack) => {
     expect(pack.documentTypes.length).toBeGreaterThan(0);
     expect(pack.filterableFields.length).toBeGreaterThan(0);
     expect(Object.keys(pack.terminology).length).toBeGreaterThan(0);
-    expect(pack.answerStructure.length).toBeGreaterThan(0);
+    // Every intent needs a structure, and general Q&A must be the leanest —
+    // a factual lookup answered in report form buries the answer.
+    for (const intent of QUERY_INTENTS) {
+      expect(pack.answerStructure[intent].length).toBeGreaterThan(0);
+    }
+    expect(pack.answerStructure.GENERAL_QA.length).toBeLessThan(
+      pack.answerStructure.READINESS_ASSESSMENT.length
+    );
     expect(pack.defaultTopK).toBeGreaterThan(0);
   });
 

@@ -54,15 +54,28 @@ export const pharmaPack: DomainPack = {
 
   systemPrompt: pharmaSystemPrompt,
 
-  answerStructure: [
-    'Summary of what the evidence shows',
-    'Supporting evidence and requirements',
-    'Open deviations, CAPAs, and change controls',
-    'Cleaning and validation status',
-    'Conflicting or superseded documents',
-    'Missing evidence',
-    'What quality personnel must verify before release',
-  ],
+  answerStructure: {
+    GENERAL_QA: ['Answer', 'Supporting evidence'],
+
+    SYNTHESIS: ['Summary', 'Findings by record', 'Gaps in the record'],
+
+    CONFLICT_CHECK: [
+      'Whether the sources agree',
+      'What each source states',
+      'Which revision is effective',
+      'What must be resolved',
+    ],
+
+    READINESS_ASSESSMENT: [
+      'Summary of what the evidence shows',
+      'Supporting evidence and requirements',
+      'Open deviations, CAPAs, and change controls',
+      'Cleaning and validation status',
+      'Conflicting or superseded documents',
+      'Missing evidence',
+      'What quality personnel must verify before release',
+    ],
+  },
 
   queryExamples: pharmaQueryExamples,
 

@@ -126,6 +126,10 @@ CREATE TABLE IF NOT EXISTS questions (
   question          TEXT NOT NULL,
   answer            TEXT NOT NULL,
 
+  -- How the question was classified; selects the answer's structure.
+  -- GENERAL_QA | SYNTHESIS | CONFLICT_CHECK | READINESS_ASSESSMENT
+  intent            TEXT,
+
   -- SUPPORTED | PARTIALLY_SUPPORTED | CONFLICTING_EVIDENCE | INSUFFICIENT_EVIDENCE
   evidence_status   TEXT NOT NULL,
   -- What the model claimed before citation validation constrained it. Kept so

@@ -14,7 +14,15 @@
 import { z } from 'zod';
 import { MISTRAL_API_BASE, type MistralConfig } from '../config';
 import { fetchWithRetry } from '../embeddings/mistral';
-import { EVIDENCE_STATUSES, type DomainPack, type EvidenceConflict, type EvidenceStatus, type RetrievedChunk } from '../types';
+import {
+  EVIDENCE_STATUSES,
+  type DomainPack,
+  type EvidenceConflict,
+  type EvidenceStatus,
+  type QueryIntent,
+  type RetrievedChunk,
+} from '../types';
+import { INTENT_INSTRUCTIONS } from './intent';
 
 // ===========================================================================
 // Structured output contract
@@ -126,12 +134,14 @@ WRITING THE ANSWER
 The "answer" field is prose for a human reader. Write it as a single Markdown string using "## " headings for the sections given below. Do not return it as a JSON object.
 Never put chunk ids, quote blocks, or citation objects inside the answer text — citations belong only in the "citations" array, and the interface renders them separately. Refer to sources the way a colleague would: "IR-2026-014 Rev 1 §2 records the finding as open". Keep it tight; a reviewer should be able to scan it.`;
 
-function buildSystemPrompt(pack: DomainPack): string {
+function buildSystemPrompt(pack: DomainPack, intent: QueryIntent): string {
   const terminology = Object.entries(pack.terminology)
     .map(([term, meaning]) => `- ${term}: ${meaning}`)
     .join('\n');
 
-  const structure = pack.answerStructure.map((s, i) => `${i + 1}. ${s}`).join('\n');
+  const structure = pack.answerStructure[intent]
+    .map((s, i) => `${i + 1}. ${s}`)
+    .join('\n');
 
   return `${SHARED_SCAFFOLD}
 
@@ -143,7 +153,11 @@ ${pack.systemPrompt}
 DOMAIN TERMINOLOGY
 ${terminology}
 
-ANSWER STRUCTURE — organise the "answer" field under these headings, omitting any for which you have nothing evidenced to say:
+===========================================================================
+${INTENT_INSTRUCTIONS[intent]}
+===========================================================================
+
+ANSWER STRUCTURE — organise the "answer" field under these headings. Omit any heading you have nothing evidenced to say under; do not emit an empty section, and do not add headings beyond this list:
 ${structure}`;
 }
 
@@ -227,7 +241,8 @@ export class GenerationService {
     question: string,
     chunks: RetrievedChunk[],
     pack: DomainPack,
-    structuralConflicts: EvidenceConflict[]
+    structuralConflicts: EvidenceConflict[],
+    intent: QueryIntent
   ): Promise<GenerationOutput> {
     const started = Date.now();
 
@@ -240,7 +255,7 @@ export class GenerationService {
       body: JSON.stringify({
         model: this.config.chatModel,
         messages: [
-          { role: 'system', content: buildSystemPrompt(pack) },
+          { role: 'system', content: buildSystemPrompt(pack, intent) },
           { role: 'user', content: buildUserPrompt(question, chunks, structuralConflicts) },
         ],
         // Near-deterministic: this is an extraction task, not a creative one.
