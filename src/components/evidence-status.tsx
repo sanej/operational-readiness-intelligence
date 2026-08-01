@@ -122,11 +122,22 @@ export function EvidenceStatusPanel({
           <Metric value={String(retrievedCount)} label={'chunks\nretrieved'} />
           {/* Counted from what survived validation, not reported by the model.
               A model's self-assessed confidence is uncalibrated, and showing
-              one invites it to be read as a measurement. */}
+              one invites it to be read as a measurement.
+
+              Held at "none" when the status is INSUFFICIENT_EVIDENCE. The two
+              measure different things — the status is about whether the corpus
+              answers the question, the score about whether the offered
+              citations held up — but "nothing can be concluded" beside
+              "Strong" reads as a contradiction, and the status is the one that
+              governs what the reader should do. */}
           <Metric
-            value={SUPPORT_LABEL[evidenceSupport.label]}
+            value={
+              status === 'INSUFFICIENT_EVIDENCE'
+                ? SUPPORT_LABEL.none
+                : SUPPORT_LABEL[evidenceSupport.label]
+            }
             label={
-              evidenceSupport.claimed > 0
+              status !== 'INSUFFICIENT_EVIDENCE' && evidenceSupport.claimed > 0
                 ? `evidence support\n${evidenceSupport.verified}/${evidenceSupport.claimed} verified · ${evidenceSupport.documents} source${evidenceSupport.documents === 1 ? '' : 's'}`
                 : 'evidence support'
             }

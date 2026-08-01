@@ -169,13 +169,24 @@ function BulletList({ items }: { items: string[] }) {
  * displayed quote still corresponds to the text that was verified.
  */
 function tidyQuote(text: string): string {
-  return text
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/(^|\s)\*([^*\s][^*]*)\*(?=\s|$)/g, '$1$2')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    text
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/(^|\s)\*([^*\s][^*]*)\*(?=\s|$)/g, '$1$2')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/`([^`]+)`/g, '$1')
+      // Markdown tables. A quote from a table arrives as pipes and separator
+      // rows — "| Step | Status | | --- | --- |" — which is unreadable inline.
+      // Drop the separator rows entirely and turn the remaining cell
+      // delimiters into a readable separator, keeping every cell's text.
+      .replace(/\|[\s:|-]*\|/g, ' | ')
+      .replace(/\s*\|\s*/g, ' · ')
+      .replace(/(?:\s·)+\s?/g, ' · ')
+      .replace(/\s+/g, ' ')
+      // Collapse the separators left dangling at either end.
+      .replace(/^(?:\s*·\s*)+|(?:\s*·\s*)+$/g, '')
+      .trim()
+  );
 }
 
 function CitationCard({ citation, index }: { citation: Citation; index: number }) {
