@@ -1,147 +1,150 @@
 # Mistral models — where each one runs, and why
 
-Three Mistral models, each doing one job. Nothing is called speculatively: OCR runs
-only for formats that need it, embeddings run once per chunk at ingestion and once
-per question, and the large model runs exactly once per question.
+Three Mistral models, each doing one job. OCR runs only for formats that need it,
+embeddings run once per chunk at ingestion and once per question, and generation runs
+exactly once per answer.
 
-| Model | Called from | Job | Frequency |
+| Model | Job | Frequency | Why this choice |
 |---|---|---|---|
-| `mistral-ocr-latest` | `core/ingestion/ocr.ts` | Extract PDFs, images, and Office files as per-page Markdown | Once per document, ever |
-| `mistral-embed` | `core/embeddings/mistral.ts` | 1024-d vectors for chunks and for the query | Per chunk at ingest; once per question |
-| `mistral-large-latest` | `core/generation/generate.ts` | Grounded answer as structured JSON | Once per question |
+| `mistral-ocr-4-0` | PDF/image/Office extraction as per-page Markdown | Once per document version | Current OCR service; preserves hierarchy and tables and can expose blocks/confidence for production review |
+| `mistral-embed` | 1024-d chunk and query vectors | Per chunk at ingest; once per question | Stable text embedding endpoint matched by the Vectorize index |
+| `mistral-medium-3-5` | Multi-document grounded answer as bounded structured output | Once per question | Quality-first current model for synthesis and structured outputs |
 
-All three are configurable in `wrangler.toml` (`MISTRAL_OCR_MODEL`,
-`MISTRAL_EMBED_MODEL`, `MISTRAL_CHAT_MODEL`) and read through `core/config.ts`. The
-API key is always passed in explicitly, never read from module scope — reading
-`process.env` at import time is `undefined` on Workers.
+All three are configurable in `wrangler.toml` and read through `core/config.ts`. Exact
+release ids are defaults for reproducibility; a release candidate should never silently
+change because a `latest` alias moved. The API key is always passed explicitly rather
+than read at module import time, which works in both Workers and the Node CLI.
+
+Official references: [model selection](https://docs.mistral.ai/models/model-selection-guide),
+[OCR](https://docs.mistral.ai/studio-api/document-processing/basic_ocr),
+[embeddings](https://docs.mistral.ai/resources/cookbooks/mistral-embeddings-embeddings), and
+[custom structured outputs](https://docs.mistral.ai/studio-api/conversations/structured-output/custom).
 
 ---
 
-## `mistral-ocr-latest` — extraction
+## `mistral-ocr-4-0` — extraction
 
-**Runs for:** `pdf`, `png`, `jpg`, `jpeg`, `gif`, `webp`, `docx`, `pptx`
+**Runs for:** `pdf`, `png`, `jpg`, `jpeg`, `gif`, `webp`, `docx`, `pptx`.
 
-**Does not run for:** `md`, `txt`, `csv`, `json` — those are decoded directly or
+**Does not run for:** `md`, `txt`, `csv`, `json`; those are decoded directly or
 rendered to Markdown without an API call.
 
-The bytes are sent as a `data:` URI, which avoids needing a publicly reachable URL
-for the file.
+The prototype sends bytes as a `data:` URI, avoiding a publicly reachable file URL.
+OCR returns Markdown rather than flat text, so headings and tables feed the same
+structure-aware chunker used for native Markdown. That is why citations can point to a
+page and section rather than just a document.
 
-**Why it matters more than "text extraction":** Mistral OCR returns **Markdown**, not
-flat text. Headings survive as `##`, tables survive as pipe tables. That structure is
-what makes section-aware chunking possible downstream — without it, every chunk from
-a PDF would be attributed to the document rather than to a section, and citations
-would say "page 1" instead of "§2.2 Process Isolation".
-
-**Observed:** the two sample PDFs extract in roughly 4–5 seconds each, with heading
-hierarchy and table structure intact. The chunker builds correct heading paths from
-that output with no special-casing for the OCR route.
-
-**Not benchmarked:** scanned, rotated, skewed, or handwritten documents. The sample
-PDFs are cleanly generated.
+The two clean sample PDFs were exercised successfully with the previous `latest` alias.
+The current pinned OCR 4 default is API-compatible but has not been benchmarked against
+the full scan-quality matrix. Production evaluation must include rotation, skew, faint
+scans, handwriting, signatures, dense tables, multilingual documents, and low-confidence
+page routing.
 
 ---
 
 ## `mistral-embed` — retrieval
 
-**1024 dimensions**, which the Vectorize index must be created to match:
+The model produces **1024 dimensions**, which the Vectorize index must match:
 
 ```bash
 npx wrangler vectorize create ori-vectors-dev --dimensions=1024 --metric=cosine
 ```
 
 A dimension mismatch throws at ingestion rather than silently poisoning the index.
+Embedding requests batch 64 chunks at a time, results are sorted by the API's returned
+index, and each chunk is prefixed with its document title and heading path before
+embedding:
 
-**Called twice in the system's life:**
-
-1. **At ingestion**, once per chunk, batched 64 at a time.
-2. **At question time**, once, for the query.
-
-**One detail worth knowing.** Each chunk is prefixed with its document title and
-heading path before embedding:
-
-```
+```text
 SP-204 Energy Isolation > 2. Isolation Requirements for Compressor C-101
 
 1. Close and lock the suction isolation valve XV-C101-01.
-...
 ```
 
-An isolated procedure step ("Verify the valve is closed") embeds poorly — it has no
-signal about which system or which procedure it belongs to. The prefix restores that
-context without changing what gets stored or cited.
+An isolated procedure step embeds poorly without the system/procedure context held in
+its headings. The prefix improves retrieval while the stored and cited content remains
+the original source span.
 
-**Retries:** 429 and 5xx are retried with exponential backoff; 4xx errors surface
-immediately, because they will fail identically every time.
+Dense retrieval is the bounded prototype choice, not a claim that semantic search is
+sufficient for operations. Production adds lexical retrieval for identifiers, dates,
+negations, and exact references; fuses candidates; reranks; and measures obligation-level
+recall.
 
 ---
 
-## `mistral-large-latest` — grounded generation
+## `mistral-medium-3-5` — grounded generation
 
-Called once per question with `response_format: { type: 'json_object' }` and
-`temperature: 0.1`. This is an extraction task, not a creative one.
+Called once per question at `temperature: 0.1`. The response uses Mistral custom
+structured outputs (`response_format.type = json_schema`) with bounds on answer length,
+citations, conflicts, missing-evidence items, and human-verification items.
 
-**Returns:**
+The schema requires:
 
 ```json
 {
-  "answer": "...",
+  "answer": "concise Markdown",
   "evidence_status": "SUPPORTED | PARTIALLY_SUPPORTED | CONFLICTING_EVIDENCE | INSUFFICIENT_EVIDENCE",
   "confidence": 0.0,
-  "citations": [{ "chunk_id": "...", "quote": "verbatim text", "relevance": 0.0 }],
+  "citations": [{ "chunk_id": "...", "quote": "exact source span", "relevance": 0.0 }],
   "missing_evidence": ["..."],
   "conflicts": [{ "description": "...", "chunk_ids": ["..."] }],
   "verification_required": ["..."]
 }
 ```
 
-**The model's status is a proposal, not the answer.** After generation, every claimed
-citation is checked against the chunks actually retrieved — the chunk must be in the
-retrieved set, and the quote must genuinely appear in it. Citations that fail are
-dropped and the status is capped by what survives. Across 38 questions asked during
-development and evaluation, **9 (24%) had their status corrected this way.**
+### Why the bounded schema matters
 
-**Prompt assembly** is two layers:
+The first live interview-path run used loose JSON mode with `mistral-large-latest`.
+Retrieval succeeded, but generation reached the 4,096-token limit after 52 seconds and
+ended mid-object. Parsing failed safely to `INSUFFICIENT_EVIDENCE`, which protected the
+user but made the demo unreliable.
 
-- A shared scaffold in `core/generation/generate.ts` — grounding rules, the four
-  evidence statuses, and the constraint that the system never implies approval.
-- The domain pack's own prompt — terminology, document types, and what a competent
-  reviewer in that field looks for.
+After moving to custom JSON Schema, bounding the response, and selecting Medium 3.5, the
+same readiness query completed in **24.9s** with **1,402 completion tokens**. Six of eight
+citation quotes passed exact validation across five documents; deterministic conflict
+rules reconciled the model's `PARTIALLY_SUPPORTED` proposal to
+`CONFLICTING_EVIDENCE`. This is one observed run, not a benchmark.
 
-No industry vocabulary appears in `core/`.
+### What happens after generation
 
-**Failure handling:** a malformed or schema-violating response degrades to
-`INSUFFICIENT_EVIDENCE` with no citations. The prose is salvaged if it is usable, but
-it carries no unearned status. Failing toward "we don't know" is the safe direction.
+- Every cited chunk id must belong to the retrieved set.
+- Every quote must be an exact span after whitespace and typography normalization.
+- Invalid citations are dropped and shown as validation notes.
+- `SUPPORTED` cannot survive with zero verified citations.
+- A material structural or supported semantic conflict can override a support claim.
+- Malformed/schema-invalid output degrades to `INSUFFICIENT_EVIDENCE`.
 
-**Cost shape:** roughly 3–4k prompt tokens and ~2k completion tokens per question.
-This call is the ~39s p50 latency; retrieval is 1–2s.
+This validates citation **provenance**, not answer-wide entailment or claim coverage. A
+production response should be composed of claim objects with citation ids, followed by
+coverage and calibrated entailment/contradiction checks.
 
 ---
 
-## What is *not* an LLM call
+## What is not an LLM call
 
-Worth being explicit, because these are the parts that make the evidence status mean
-something:
-
-| Function | How it works |
+| Function | Mechanism |
 |---|---|
-| Citation validation | Pure string comparison, normalised for whitespace and quote characters |
-| Status enforcement | Deterministic rules over the surviving citation count |
-| Revision-conflict detection | Metadata comparison — same type, same subject, two active revisions |
-| Authority ranking | Arithmetic over document lifecycle and effective dates |
-| Evaluation checks | Mechanical inspection of the answer object, including approval-language regexes |
+| Citation provenance | Exact normalized string containment in a retrieved chunk |
+| Status enforcement | Deterministic rules over surviving citations and conflicts |
+| Revision conflict detection | Metadata comparison: same type/subject, two active revisions |
+| Authority ranking | Arithmetic over lifecycle, dates, and open-action metadata |
+| Evaluation checks | Mechanical inspection of status, retrieval, citations, conflicts, gaps, and approval wording |
 
-There is deliberately **no LLM-as-judge** in the evaluation harness. A model grading
-another model's output shares the failure modes being tested for.
+There is deliberately no LLM-as-judge in the prototype harness. That keeps regression
+checks deterministic, but it also means the harness does not score prose quality or
+semantic entailment. Those require a human-labelled set and, if a learned judge is added,
+calibration against that set.
 
 ---
 
-## Swapping models
+## Production model routing
 
-Everything routes through `createConfig()` in `core/config.ts`. To try a different
-generation model, change `MISTRAL_CHAT_MODEL` in `wrangler.toml` — no code change.
+The first experiment is not “use the cheapest model.” It is an intent-segmented comparison:
 
-Changing the **embedding** model is not free: `EMBED_DIMENSIONS` must match the new
-model, the Vectorize index must be recreated at that dimensionality, and the corpus
-must be re-ingested. Chunk IDs are deterministic, so the re-ingest upserts in place.
+- Mistral Small 4 for narrow general Q&A and extraction-shaped answers;
+- Mistral Medium 3.5 for readiness and multi-document synthesis;
+- the same citation/status enforcement after either model.
+
+Promote routing only if critical-evidence recall, unsupported-claim rate, status F1,
+conflict recall, latency, and cost remain inside the pilot gates in
+[`PRODUCTION_HYPOTHESIS.md`](PRODUCTION_HYPOTHESIS.md).

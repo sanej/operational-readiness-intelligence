@@ -267,6 +267,18 @@ export class D1Store {
     );
   }
 
+  async getDocumentsByIds(ids: string[]): Promise<DocumentRow[]> {
+    if (ids.length === 0) return [];
+    const unique = [...new Set(ids)];
+    const placeholders = unique.map(() => '?').join(',');
+    return (
+      await this.db
+        .prepare(`SELECT * FROM documents WHERE id IN (${placeholders})`)
+        .bind(...unique)
+        .all<DocumentRow>()
+    ).results;
+  }
+
   async listDocuments(corpusId: string): Promise<DocumentRow[]> {
     return (
       await this.db
@@ -548,11 +560,16 @@ export class D1Store {
 // ===========================================================================
 
 /**
- * Vectorize metadata values must be primitives. Namespacing is by domain, so
- * the industrial and pharma corpora never retrieve each other's evidence even
- * though they share one index.
+ * Vectorize metadata values must be primitives. New vectors are namespaced by
+ * corpus so tenant/corpus isolation happens before approximate-nearest-neighbor
+ * search, rather than by filtering a global candidate list afterwards.
  */
 export type VectorMetadata = Record<string, string | number | boolean>;
+
+/** Stable isolation boundary for vectors belonging to one corpus. */
+export function vectorNamespace(domain: string, corpusId: string): string {
+  return `${domain}:${corpusId}`;
+}
 
 export class VectorStore {
   constructor(private readonly index: VectorizeIndex) {}

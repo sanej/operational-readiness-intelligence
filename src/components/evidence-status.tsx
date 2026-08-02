@@ -152,8 +152,8 @@ export function EvidenceStatusPanel({
           </span>
           <p className="text-[12.5px] leading-relaxed opacity-90">
             The model proposed <strong>{STATUS_META[claimedStatus].label}</strong>. Every quote was
-            checked against the evidence actually retrieved, and the status was capped by what
-            survived.
+            checked against the evidence actually retrieved. Deterministic citation and conflict
+            rules reconciled the final status.
           </p>
         </div>
       )}

@@ -47,10 +47,16 @@ describe('isQuoteGrounded', () => {
     expect(isQuoteGrounded('Secondary   vent\nflow on the non-drive-end', source)).toBe(true);
   });
 
-  it('accepts a long quote with a small elision', () => {
+  it('rejects a long quote with an elision rather than treating overlap as verbatim', () => {
     expect(
       isQuoteGrounded('Secondary vent flow on the dry gas seal measured 21 against threshold of 15', source)
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('rejects a quote made from real source words in a different order', () => {
+    expect(
+      isQuoteGrounded('OEM threshold measured 15 Nm³/h against vent flow of 21 Nm³/h', source)
+    ).toBe(false);
   });
 
   it('rejects text that is not in the source', () => {

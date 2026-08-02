@@ -1,4 +1,4 @@
-// Mistral OCR (mistral-ocr-latest).
+// Mistral OCR (mistral-ocr-4-0 by default; configurable).
 //
 // Used for PDFs, images, and office documents. Mistral OCR returns per-page
 // Markdown, which preserves headings and tables — that structure is what

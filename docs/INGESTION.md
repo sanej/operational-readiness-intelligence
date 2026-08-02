@@ -22,7 +22,7 @@ file bytes
    │
    ├─ 6. embed (mistral-embed, batches of 64)
    │
-   ├─ 7. upsert vectors to Vectorize (namespace = domain)
+   ├─ 7. upsert vectors to Vectorize (namespace = corpus)
    │
    └─ 8. write chunks + document row to D1           → status: indexed
 ```
@@ -39,7 +39,7 @@ is not that the steps disappeared — it is where the decisions live.
 | Split on a fixed character or token count | Split on Markdown headings; fall back to token windows only when one section is too large | A citation is only actionable if it names the section it came from |
 | Chunk carries text and an index | Chunk carries page, section, heading path, revision, and lifecycle status | That is what a reviewer needs to verify a claim |
 | Re-running the script duplicates the corpus | IDs are pure functions of `(corpus, content, index)` — re-ingest upserts in place | Idempotency by construction, not by a cleanup job |
-| Local FAISS / Chroma index | Vectorize, namespaced per domain | Isolation is enforced by the store, not by filtering after the fact |
+| Local FAISS / Chroma index | Vectorize, namespaced per corpus | Corpus isolation is enforced before ANN search, not by filtering a shared candidate list afterward |
 | Metadata as a loose dict | Zod schema per domain, `.strict()` | A typo like `assetID` fails at ingestion instead of becoming a filter that silently never matches |
 | One embedding call per chunk | Batched 64 at a time, order preserved by re-sorting on the API's returned index | Fewer round trips, and the mapping back to chunks stays positional |
 | Store the vector, discard the extraction | Parsed artifact written to R2 alongside the original | Re-chunking never re-runs OCR |
@@ -138,6 +138,11 @@ a failure leaves a row marked `failed` with its error message rather than leavin
 trace. The UI surfaces that on the document card.
 
 A document that produces zero chunks is an error, not a silent success.
+
+New vectors use a corpus namespace. Retrieval temporarily also checks the old domain namespace
+when the corpus namespace has not filled the candidate window, so existing demo data remains
+usable during migration. Re-ingestion writes only to the corpus namespace; the legacy fallback
+can be removed after all corpora have been reindexed.
 
 ---
 

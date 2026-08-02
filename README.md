@@ -12,7 +12,7 @@ The layering matters and is deliberate:
 | Layer | What it is |
 |---|---|
 | **Foundation** | General question answering. Every answer is grounded in retrieved evidence and cited. |
-| **Guarantee** | Citations are verified against the retrieved text, and the evidence status is capped by what survives. |
+| **Guarantee** | Citation quotes are verified against retrieved text, and deterministic rules reconcile the evidence status. |
 | **Specialisation** | Readiness, conflict, and synthesis modes, selected by query intent. |
 
 ORI does not approve anything. It never states or implies that equipment, work, production,
@@ -42,8 +42,8 @@ ORI is built around the failure modes that matter in this setting:
 |---|---|
 | Answering from a superseded revision | Authority-aware re-ranking demotes superseded/draft/withdrawn documents and boosts the current revision |
 | Two revisions in force, model picks one | Structural conflict detection compares document metadata and forces `CONFLICTING_EVIDENCE` |
-| Citing a source that does not say what is claimed | Every quote is verified verbatim against the retrieved chunk; failures are dropped |
-| Reporting "supported" on unverifiable evidence | Status is capped by what survived validation — `SUPPORTED` is unreachable with zero verified citations |
+| Fabricating or misattributing a quotation | Every quote must be an exact span of its retrieved chunk after typographic normalisation; failures are dropped |
+| Reporting "supported" with no verifiable citation | `SUPPORTED` is unreachable with zero verified citations, and conflicts can deterministically override a support claim |
 | Filling a gap with a plausible guess | Abstention is a first-class outcome, with the missing evidence enumerated |
 | Reading as an approval | Prompt constraints plus an eval check that fails on approval language |
 
@@ -63,8 +63,8 @@ Every answer resolves to exactly one:
 **The model proposes a status; the system enforces one.** After generation, every claimed
 citation is checked against the chunks actually retrieved — the chunk must be in the
 retrieved set, and the quoted text must genuinely appear in it. Citations that fail are
-dropped, and the status is capped by what survived. The UI shows both, so a downgrade is
-visible rather than silent:
+dropped, and deterministic citation and conflict rules reconcile the final status. The UI
+shows both, so an adjustment is visible rather than silent:
 
 ```
 EVIDENCE STATUS   PARTIALLY_SUPPORTED
@@ -83,6 +83,8 @@ at least one quote verified to exist in a retrieved source.
 | [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | Every deliverable, how it was verified, and what is explicitly *not* claimed |
 | [docs/MODELS.md](docs/MODELS.md) | Which Mistral model runs where, why, and what is deliberately not an LLM call |
 | [docs/INGESTION.md](docs/INGESTION.md) | The upload path end to end — chunking rules, metadata, idempotency |
+| [docs/PRODUCTION_HYPOTHESIS.md](docs/PRODUCTION_HYPOTHESIS.md) | Shadow-mode pilot, promotion gates, architecture, governance, reliability, and cost |
+| [docs/INTERVIEW_GUIDE.md](docs/INTERVIEW_GUIDE.md) | 60-minute flow, demo choreography, trust boundary, and likely deep-dive questions |
 
 ---
 
@@ -112,9 +114,9 @@ at least one quote verified to exist in a retrieved source.
 **Ingestion:** `R2 (original) → Mistral OCR / direct / structured → normalize → structure-aware
 chunk → mistral-embed → Vectorize → D1 (chunks + provenance)`
 
-**Ask:** `embed query → Vectorize (namespace = domain) → corpus + metadata filter in D1 →
+**Ask:** `embed query → Vectorize (namespace = corpus) → metadata filter in D1 →
 authority re-rank → counterpart-revision pass → structural conflict detection →
-mistral-large (structured JSON) → citation validation → status enforcement → D1`
+Mistral Medium 3.5 (bounded JSON Schema) → citation validation → status enforcement → D1`
 
 ### Layout
 
@@ -284,8 +286,8 @@ both operate on the same live D1, R2, and Vectorize.
 |---|---|---|---|
 | `MISTRAL_API_KEY` | `.dev.vars` / `wrangler secret` | — | **Required.** Never in `wrangler.toml`. |
 | `MISTRAL_EMBED_MODEL` | `wrangler.toml` | `mistral-embed` | 1024-d embeddings |
-| `MISTRAL_CHAT_MODEL` | `wrangler.toml` | `mistral-large-latest` | Answer generation |
-| `MISTRAL_OCR_MODEL` | `wrangler.toml` | `mistral-ocr-latest` | Document extraction |
+| `MISTRAL_CHAT_MODEL` | `wrangler.toml` | `mistral-medium-3-5` | Multi-document synthesis with structured outputs |
+| `MISTRAL_OCR_MODEL` | `wrangler.toml` | `mistral-ocr-4-0` | Document extraction with layout preserved |
 | `CHUNK_TARGET_TOKENS` | `wrangler.toml` | `512` | Target chunk size |
 | `CHUNK_OVERLAP_TOKENS` | `wrangler.toml` | `100` | Window overlap |
 | `RETRIEVAL_TOP_K` | `wrangler.toml` | `8` | Default retrieval breadth |
@@ -310,12 +312,17 @@ For a separate production environment, create `ori-db-prod` / `ori-documents-pro
 
 ## Design decisions
 
-**Grounding is enforced by the system, not requested in a prompt.**
+**Citation provenance is enforced by the system, not requested only in a prompt.**
 A model asked to cite its sources will sometimes cite a chunk that was never retrieved, or
 quote text that is not in the chunk it names. Both produce an answer that looks sourced and
 is not. `core/citations/validate.ts` checks every citation against the retrieved set and
-caps the status by what survives. It is pure — no network, no provider types — and carries
-the densest test coverage in the project.
+requires exact quote containment after whitespace and typography normalisation. It is pure —
+no network, no provider types — and carries the densest test coverage in the project.
+
+This guarantee is deliberately narrow: it proves **where the quote came from**, not that every
+sentence in the answer is entailed by that quote or that every material claim has one. Claim-
+level coverage and entailment checks are a production gate, not a capability this prototype
+quietly pretends to have.
 
 **Conflict detection is structural first, semantic second.**
 The model reads chunks; it cannot see that two documents are competing revisions unless both
@@ -397,7 +404,7 @@ across pages or top-level sections, and a chunk spanning several subsections is 
 their deepest *common* ancestor rather than the first — attributing a chunk covering §2.1–§2.3
 to "§2.1" would point a reviewer at the wrong place. The first implementation produced 13
 chunks for 7 documents, nearly all labelled with just the document title; the current one
-produces 43, each addressable to a real section.
+produces 49, each addressable to a real section.
 
 **WebCrypto, not `node:crypto`.**
 One implementation serves both the Worker and the Node CLI, so ingestion cannot diverge
@@ -427,8 +434,9 @@ detection, and conflicting-document detection. Latency and token usage are recor
 and results are written to `evaluation_runs` / `evaluation_records` in D1 so runs can be
 compared over time.
 
-Results are reported per dimension, so a failure says which capability regressed. Current
-state — **14/14 passing**, all dimensions green in both domains:
+Results are reported per dimension, so a failure says which capability regressed. The last
+full-suite baseline (2026-07-31, before the current model/output-contract hardening) was
+**14/14 passing**, all dimensions green in both domains:
 
 ```
 Industrial Operations  7/7 passed
@@ -488,22 +496,23 @@ Each corpus contains three deliberate cases:
   CA-2026-031") lean on the identifier appearing in surrounding text. The retrieval interface
   is shaped so hybrid scoring and a reranking stage slot in as additional scoring stages
   without changing callers.
-- **Latency is 20–60s per question.** Dominated by `mistral-large-latest` generating a
-  structured answer with citations. No streaming, so the UI shows a skeleton for the full
-  duration.
+- **Latency is still interactive-demo grade.** The hardened live readiness run completed in
+  24.9s (0.7s retrieval, 24.1s generation). No streaming, so the UI shows a skeleton for the
+  full duration.
 - **Conflict detection needs metadata.** Documents without `documentType` and a subject key
   (asset, equipment, SOP number) cannot be grouped into revision families. Structural
   detection then silently does nothing and only the model's semantic detection remains.
-- **Quote matching is lexical.** Normalised containment, plus an 80% content-word overlap
-  allowance for long quotes. A faithful paraphrase is rejected — deliberately biased toward
-  false rejection over false acceptance.
+- **Quote validation is lexical, not semantic.** It requires exact containment after
+  whitespace, dash, and quotation-mark normalisation. A faithful paraphrase is rejected —
+  deliberately biased toward false rejection over false acceptance. It does not prove
+  answer-wide entailment or claim coverage.
 - **Front matter parsing is minimal.** Flat `key: value` pairs and simple lists, not a full
   YAML parser.
 - **No incremental re-index.** Changing chunking configuration requires re-ingestion. Ids are
   deterministic so this upserts in place, but chunks orphaned by a previous chunking scheme
   are not garbage-collected.
-- **Single corpus per domain in the UI.** The schema and pipeline support many; the UI uses
-  the conventional `<domain>-demo` id.
+- **Single corpus per domain in the UI.** The schema and pipeline support many, and new vectors
+  are isolated by corpus namespace; the UI still uses the conventional `<domain>-demo` id.
 - **OCR is exercised but not benchmarked at scale.** Two PDFs in the sample corpus go through
   Mistral OCR on every ingest, and quality on those is good. It has not been tested against
   scanned, rotated, or handwritten documents, which is where OCR usually degrades.
@@ -516,22 +525,23 @@ Each corpus contains three deliberate cases:
 set; query decomposition for multi-part readiness questions; tuning authority weights per
 domain against a larger eval set.
 
-**Latency** — stream the answer while validating citations server-side; cache query
-embeddings; use a smaller model for classification-shaped questions and reserve
-`mistral-large` for synthesis.
+**Latency and cost** — route narrow Q&A to Mistral Small 4 and reserve Mistral Medium 3.5 for
+multi-document synthesis after an offline quality/cost comparison; cache query embeddings;
+stream a clearly provisional answer only if the UI can withhold the final evidence status
+until validation completes.
 
 **Ingestion** — move to Cloudflare Queues so a large upload does not block a request; a
 document supersession workflow that maintains `superseded_by` automatically; table-aware
 chunking so a specification table is never split mid-row.
 
-**Trust and audit** — surface rejected-citation detail in the UI, not just the count; link
-citations to a page-anchored viewer over the R2 original; retain the full prompt and retrieved
-set per answer for audit replay.
+**Trust and audit** — claim-level citation identifiers and deterministic coverage checks;
+entailment/contradiction evaluation as a separate calibrated stage; page-anchored source
+viewer; prompt/model/index versioning and replayable audit records.
 
-**Extension points designed for, deliberately not built:** authentication and multi-tenancy
-(corpus is already the isolation boundary), workflow dashboards, notifications, scheduled
-monitoring, collaboration. Each sits above the current pipeline rather than requiring changes
-to it.
+**Platform controls** — tenant identity and RBAC at every API boundary, object-prefix and
+corpus-namespace isolation, regional retention/deletion controls, asynchronous ingestion with
+queues and dead-letter handling, rate limits, SLOs, and per-tenant cost budgets. See
+[`docs/PRODUCTION_HYPOTHESIS.md`](docs/PRODUCTION_HYPOTHESIS.md) for measurable pilot gates.
 
 ---
 

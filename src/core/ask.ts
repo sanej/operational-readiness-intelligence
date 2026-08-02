@@ -61,6 +61,40 @@ function normaliseSection(section: string | undefined): string | undefined {
   return subject.length > 2 ? subject : undefined;
 }
 
+function sameDocumentSet(left: EvidenceConflict, right: EvidenceConflict): boolean {
+  if (left.documentIds.length === 0 || right.documentIds.length === 0) return false;
+  const leftIds = new Set(left.documentIds);
+  const rightIds = new Set(right.documentIds);
+  return leftIds.size === rightIds.size && [...leftIds].every((id) => rightIds.has(id));
+}
+
+/**
+ * Collapse the model's semantic explanation into an equivalent structural
+ * revision conflict. The deterministic conflict is the governing signal; the
+ * semantic description adds the useful detail about how the text differs.
+ */
+export function mergeEvidenceConflicts(
+  structural: EvidenceConflict[],
+  semantic: EvidenceConflict[]
+): EvidenceConflict[] {
+  const remaining = [...semantic];
+  const merged = structural.map((conflict) => {
+    const counterpartIndex = remaining.findIndex((candidate) =>
+      sameDocumentSet(conflict, candidate)
+    );
+    if (counterpartIndex < 0) return conflict;
+
+    const [counterpart] = remaining.splice(counterpartIndex, 1);
+    return {
+      ...conflict,
+      description: `${conflict.description} Content difference: ${counterpart.description}`,
+      chunkIds: [...new Set([...conflict.chunkIds, ...counterpart.chunkIds])],
+    };
+  });
+
+  return [...merged, ...remaining];
+}
+
 export class AskPipeline {
   private readonly storage: Storage;
   private readonly retrieval: RetrievalService;
@@ -323,7 +357,10 @@ export class AskPipeline {
       return conflict.documentIds.length < 2 ? cited >= 1 : cited >= 2;
     });
 
-    const conflicts = [...materialStructuralConflicts, ...materialSemanticConflicts];
+    const conflicts = mergeEvidenceConflicts(
+      materialStructuralConflicts,
+      materialSemanticConflicts
+    );
 
     // Re-run enforcement with the conflicts that survived, so the status
     // reflects them.

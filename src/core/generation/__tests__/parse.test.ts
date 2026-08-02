@@ -5,7 +5,7 @@
 // citations, which the validator then holds at that level.
 
 import { describe, expect, it } from 'vitest';
-import { parseModelAnswer, stripInlineChunkRefs } from '../generate';
+import { __internal, parseModelAnswer, stripInlineChunkRefs } from '../generate';
 
 function json(value: unknown): string {
   return JSON.stringify(value);
@@ -63,6 +63,12 @@ describe('parseModelAnswer', () => {
     expect(result.verification_required.length).toBeGreaterThan(0);
   });
 
+  it('reports token-limit truncation as the parse failure reason', () => {
+    const result = parseModelAnswer('{"answer":"cut off', 4, 'length');
+    expect(result.answer).toContain('reached its output limit');
+    expect(result.evidence_status).toBe('INSUFFICIENT_EVIDENCE');
+  });
+
   it('degrades on an invalid evidence status rather than passing it through', () => {
     const result = parseModelAnswer(json({ ...WELL_FORMED, evidence_status: 'APPROVED' }), 4);
     expect(result.evidence_status).toBe('INSUFFICIENT_EVIDENCE');
@@ -90,6 +96,15 @@ describe('parseModelAnswer', () => {
     expect(result.missing_evidence).toEqual([]);
     expect(result.conflicts).toEqual([]);
     expect(result.verification_required).toEqual([]);
+  });
+});
+
+describe('provider response format', () => {
+  it('uses a strict bounded JSON schema rather than loose JSON mode', () => {
+    expect(__internal.responseFormat.type).toBe('json_schema');
+    expect(__internal.responseFormat.json_schema.strict).toBe(true);
+    expect(__internal.responseFormat.json_schema.schema.properties.answer.maxLength).toBeLessThanOrEqual(5000);
+    expect(__internal.responseFormat.json_schema.schema.properties.citations.maxItems).toBeLessThanOrEqual(8);
   });
 });
 

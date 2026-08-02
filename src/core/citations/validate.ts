@@ -114,23 +114,17 @@ function normalize(text: string): string {
 /**
  * Whether `quote` is genuinely grounded in `chunk`.
  *
- * Exact containment after normalisation is the primary test. Models often
- * quote with small elisions, so a long quote also passes when a strong
- * majority of its content words appear in the chunk. Short quotes get no such
- * latitude — with few words, high overlap is easy to hit by chance.
+ * Exact containment after typographic normalisation is the only test. A
+ * content-word-overlap fallback looks convenient, but it can accept reordered
+ * words or a partly invented sentence as a quotation. In this system a false
+ * rejection is recoverable (the status is downgraded); a false acceptance can
+ * make unsupported prose look verified.
  */
 export function isQuoteGrounded(quote: string, chunk: string): boolean {
   const q = normalize(quote);
   const c = normalize(chunk);
 
-  if (!q) return false;
-  if (c.includes(q)) return true;
-
-  const words = q.split(' ').filter((w) => w.length > 3);
-  if (words.length < 5) return false;
-
-  const present = words.filter((w) => c.includes(w)).length;
-  return present / words.length >= 0.8;
+  return q.length > 0 && c.includes(q);
 }
 
 /**

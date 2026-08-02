@@ -89,6 +89,88 @@ const ModelAnswerSchema = z.object({
   verification_required: z.array(z.string()).default([]),
 });
 
+/**
+ * Provider-side output contract.
+ *
+ * JSON mode only promises syntactically valid JSON and the live interview path
+ * demonstrated why that is insufficient: a verbose response reached the token
+ * ceiling mid-object. Mistral custom structured outputs enforce this schema;
+ * length and item bounds also keep a complete answer comfortably below the
+ * completion budget.
+ */
+const MODEL_ANSWER_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'answer',
+    'evidence_status',
+    'confidence',
+    'citations',
+    'missing_evidence',
+    'conflicts',
+    'verification_required',
+  ],
+  properties: {
+    answer: {
+      type: 'string',
+      maxLength: 4500,
+      description: 'Concise Markdown answer using only the requested section headings.',
+    },
+    evidence_status: { type: 'string', enum: EVIDENCE_STATUSES },
+    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    citations: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['chunk_id', 'quote', 'relevance'],
+        properties: {
+          chunk_id: { type: 'string' },
+          quote: {
+            type: 'string',
+            maxLength: 320,
+            description: 'Shortest sufficient verbatim span copied from the cited chunk.',
+          },
+          relevance: { type: 'number', minimum: 0, maximum: 1 },
+        },
+      },
+    },
+    missing_evidence: {
+      type: 'array',
+      maxItems: 5,
+      items: { type: 'string', maxLength: 180 },
+    },
+    conflicts: {
+      type: 'array',
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['description', 'chunk_ids'],
+        properties: {
+          description: { type: 'string', maxLength: 260 },
+          chunk_ids: { type: 'array', maxItems: 4, items: { type: 'string' } },
+        },
+      },
+    },
+    verification_required: {
+      type: 'array',
+      maxItems: 5,
+      items: { type: 'string', maxLength: 180 },
+    },
+  },
+} as const;
+
+const MISTRAL_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'grounded_operational_answer',
+    strict: true,
+    schema: MODEL_ANSWER_JSON_SCHEMA,
+  },
+} as const;
+
 export type ModelAnswer = z.infer<typeof ModelAnswerSchema>;
 
 export interface GenerationOutput {
@@ -131,7 +213,7 @@ EVIDENCE STATUS — choose exactly one:
 Be conservative. If you are choosing between two statuses, pick the weaker one.
 
 WRITING THE ANSWER
-The "answer" field is prose for a human reader. Write it as a single Markdown string using "## " headings for the sections given below. Do not return it as a JSON object.
+The "answer" field is prose for a human reader. Write it as a single Markdown string using "## " headings for the sections given below. Do not return it as a JSON object. Keep the complete answer under 500 words.
 Never put chunk ids, quote blocks, or citation objects inside the answer text — citations belong only in the "citations" array, and the interface renders them separately. Refer to sources the way a colleague would: "IR-2026-014 Rev 1 §2 records the finding as open". Keep it tight; a reviewer should be able to scan it.`;
 
 function buildSystemPrompt(pack: DomainPack, intent: QueryIntent): string {
@@ -216,18 +298,8 @@ function buildUserPrompt(
 EVIDENCE:
 ${buildEvidenceBlock(chunks)}${conflictNote}
 
-Respond with a single JSON object and nothing else:
-{
-  "answer": "your answer, organised under the domain's answer structure",
-  "evidence_status": "SUPPORTED | PARTIALLY_SUPPORTED | CONFLICTING_EVIDENCE | INSUFFICIENT_EVIDENCE",
-  "confidence": 0.0-1.0,
-  "citations": [
-    { "chunk_id": "the exact chunk_id from the evidence above", "quote": "verbatim text copied from that chunk", "relevance": 0.0-1.0 }
-  ],
-  "missing_evidence": ["specific documents or records that would be needed to answer fully"],
-  "conflicts": [ { "description": "what contradicts what", "chunk_ids": ["..."] } ],
-  "verification_required": ["what a qualified human must confirm before acting"]
-}`;
+Return the required structured object. Keep only material findings. Use at most eight citations,
+and make each quote the shortest sufficient VERBATIM span from its cited chunk.`;
 }
 
 // ===========================================================================
@@ -261,20 +333,30 @@ export class GenerationService {
         // Near-deterministic: this is an extraction task, not a creative one.
         temperature: 0.1,
         max_tokens: 4096,
-        response_format: { type: 'json_object' },
+        response_format: MISTRAL_RESPONSE_FORMAT,
       }),
     });
 
     const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{
+        finish_reason?: string;
+        message?: { content?: string | Array<{ type?: string; text?: string }> };
+      }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
       model?: string;
     };
 
-    const content = data.choices?.[0]?.message?.content;
+    const rawContent = data.choices?.[0]?.message?.content;
+    const content =
+      typeof rawContent === 'string'
+        ? rawContent
+        : rawContent
+            ?.filter((part) => part.type === 'text' && typeof part.text === 'string')
+            .map((part) => part.text)
+            .join('');
     if (!content) throw new Error('Mistral returned no content');
 
-    const parsed = parseModelAnswer(content, chunks.length);
+    const parsed = parseModelAnswer(content, chunks.length, data.choices?.[0]?.finish_reason);
 
     return {
       parsed,
@@ -295,7 +377,11 @@ export class GenerationService {
  * failure degrades to INSUFFICIENT_EVIDENCE with no citations, which the
  * downstream validator will keep at that level — the safe direction to fail.
  */
-export function parseModelAnswer(content: string, evidenceCount: number): ModelAnswer {
+export function parseModelAnswer(
+  content: string,
+  evidenceCount: number,
+  finishReason?: string
+): ModelAnswer {
   let json: unknown;
 
   try {
@@ -303,11 +389,15 @@ export function parseModelAnswer(content: string, evidenceCount: number): ModelA
   } catch {
     // Some models wrap JSON in prose or a code fence despite json_object mode.
     const match = /\{[\s\S]*\}/.exec(content);
-    if (!match) return fallbackAnswer(evidenceCount, 'the model response was not valid JSON');
+    const reason =
+      finishReason === 'length'
+        ? 'the model reached its output limit before completing the structured response'
+        : 'the model response was not valid JSON';
+    if (!match) return fallbackAnswer(evidenceCount, reason);
     try {
       json = JSON.parse(match[0]);
     } catch {
-      return fallbackAnswer(evidenceCount, 'the model response was not valid JSON');
+      return fallbackAnswer(evidenceCount, reason);
     }
   }
 
@@ -377,6 +467,11 @@ function fallbackAnswer(
 }
 
 /** Exported for tests and for the eval harness. */
-export const __internal = { buildSystemPrompt, buildEvidenceBlock, buildUserPrompt };
+export const __internal = {
+  buildSystemPrompt,
+  buildEvidenceBlock,
+  buildUserPrompt,
+  responseFormat: MISTRAL_RESPONSE_FORMAT,
+};
 
 export type { EvidenceStatus };

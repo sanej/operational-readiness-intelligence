@@ -6,8 +6,10 @@ Everything marked **Done** was run, not just written. Where a claim rests on a
 measurement, the measurement is named. Where something was not verified, it is
 listed under [Not claimed](#not-claimed) rather than quietly counted as done.
 
-Last verified: 2026-07-31, against the live `ori-db-dev` / `ori-documents-dev` /
-`ori-vectors-dev` resources.
+Last verified: 2026-08-01. Unit/type/lint/build checks are against the current tree. The
+single readiness reference run used the live `ori-db-dev` / `ori-documents-dev` /
+`ori-vectors-dev` resources and Mistral Medium 3.5. The 14-case full-suite result below is
+the 2026-07-31 baseline and has not been relabelled as a current-model benchmark.
 
 ---
 
@@ -15,8 +17,8 @@ Last verified: 2026-07-31, against the live `ori-db-dev` / `ori-documents-dev` /
 
 | Check | Result |
 |---|---|
-| Evaluation harness | **14/14** cases passing, all 7 dimensions green in both domains |
-| Unit tests | **70/70** passing |
+| Evaluation harness | Previous full-suite baseline: **14/14**; current hardened readiness path: **1/1** live reference run |
+| Unit tests | **86/86** passing |
 | TypeScript | clean (`tsc --noEmit`) |
 | Lint | clean (`eslint`) |
 | Production build | succeeds (`next build` + `opennextjs-cloudflare build`) |
@@ -69,20 +71,22 @@ re-chunking never re-runs OCR.
 
 ### 5. Vectorize integration — **Done**
 
-1024-d cosine index matching `mistral-embed`. Namespace per domain, which is the
-isolation boundary; corpus scoping and metadata filters are applied in D1.
+1024-d cosine index matching `mistral-embed`. New ingestion writes a namespace per
+corpus so isolation happens before ANN search. Retrieval retains a temporary legacy
+domain-namespace fallback for the already-indexed demo data; metadata filters remain in D1.
 
-**Verified:** 106 vectors indexed. Namespace isolation confirmed directly — an
-industrial query returns 49 matches in the `industrial` namespace and 57 in
-`pharma`, with no bleed.
+**Verified:** the existing 106-vector demo baseline remains queryable through the migration
+fallback. The current live readiness query retrieved only the industrial corpus and completed
+successfully. A full reindex into corpus namespaces is a migration task, not claimed complete.
 
-### 6. Mistral OCR, embeddings, and generation — **Done**
+### 6. Mistral OCR, embeddings, and generation — **Done, with version caveat**
 
 All three live. See [MODELS.md](MODELS.md) for which model runs where and why.
 
-**Verified:** two PDFs in the sample corpus go through `mistral-ocr-latest` on every
-ingest, extracting in ~4–5s each with heading hierarchy and table structure intact.
-Embeddings and generation are exercised by every eval run.
+**Verified:** two PDFs in the sample corpus previously went through the OCR `latest` alias,
+extracting in ~4–5s each with heading hierarchy and table structure intact. The current default
+is pinned to `mistral-ocr-4-0`; it is API-compatible but was not re-benchmarked in this pass.
+`mistral-embed` and `mistral-medium-3-5` were exercised by the current live readiness run.
 
 ### 7. Industrial and pharma domain packs — **Done**
 
@@ -107,8 +111,10 @@ are indexed identically. Both corpora were ingested this way.
 Seven cases per domain across seven dimensions. Latency and token usage recorded per
 case; results written to `evaluation_runs` / `evaluation_records` in D1.
 
-**Verified:** 14/14 passing. Every check is mechanical — no LLM-as-judge, because a
-model grading another model shares the failure modes being tested for.
+**Previous full-suite baseline (2026-07-31):** 14/14 passing. Every check is mechanical —
+no LLM-as-judge, because a model grading another model shares the failure modes being tested
+for. The suite has not been rerun across all 14 cases after the current model/output-contract
+change; doing so sends the retrieved synthetic corpus to Mistral and requires explicit approval.
 
 ```
 Industrial Operations  7/7    p50 39563 ms · 56453 tokens
@@ -140,14 +146,16 @@ design decisions, known limitations, production roadmap.
 
 ## Unit tests
 
-70 tests over the pure logic — the parts where correctness matters most and no
+86 tests over the pure logic — the parts where correctness matters most and no
 network call is needed.
 
 | Suite | Tests | Covers |
 |---|---|---|
-| `citations/validate.test.ts` | 21 | Quote grounding, status enforcement, the invariant that SUPPORTED needs a verified citation |
-| `domains/packs.test.ts` | 24 | Domain-pack contract, metadata strictness, eval-suite shape |
-| `generation/parse.test.ts` | 10 | Structured-output parsing, graceful degradation on malformed responses |
+| `citations/validate.test.ts` | 25 | Exact quote provenance, false-acceptance cases, status enforcement, SUPPORTED invariant |
+| `domains/packs.test.ts` | 26 | Domain-pack contract, metadata strictness, eval-suite shape |
+| `generation/parse.test.ts` | 12 | Structured-output parsing, bounded JSON Schema, safe degradation |
+| `generation/intent.test.ts` | 6 | General, synthesis, conflict, and readiness routing |
+| `generation/conflict-merge.test.ts` | 2 | Customer-view deduplication of structural/semantic conflicts |
 | `chunking/chunker.test.ts` | 8 | Heading paths, page boundaries, oversized sections |
 | `retrieval/conflicts.test.ts` | 7 | Revision-conflict detection, including what must *not* be flagged |
 
@@ -163,17 +171,19 @@ Stated explicitly, because the credibility of everything above depends on it.
 - **Browser file upload has not been clicked through.** The `/api/upload` route was
   exercised directly and the ingestion pipeline is covered by the CLI, but a file has
   not been dragged into the actual UI.
-- **The expandable "retrieved evidence" section has not been visually confirmed.** It
-  renders in the answer panel; individual rows were never expanded in a browser.
+- **The current full 14-case suite has not been rerun.** The prior model/configuration passed
+  14/14; the hardened Mistral Medium 3.5 path has one successful live reference run.
 - **OCR has not been benchmarked at scale.** Two clean, generated PDFs extract well.
   Nothing has been tested against scanned, rotated, skewed, or handwritten documents,
   which is where OCR usually degrades.
-- **Latency is not production-grade.** p50 ~39s, dominated by generation. No
-  streaming, so the UI shows a skeleton for the full duration.
+- **Latency is not production-grade.** The current live reference run took 24.9s, dominated
+  by generation. No streaming, so the UI shows a skeleton for the full duration.
 - **No hybrid retrieval and no reranker.** Dense retrieval only. Exact-identifier
   lookups lean on the identifier appearing in surrounding text.
-- **Single corpus per domain in the UI.** The schema and pipeline support many; the
-  UI uses the conventional `<domain>-demo` id.
+- **Single corpus per domain in the UI.** The storage path supports many and new vectors use
+  corpus namespaces; the UI uses the conventional `<domain>-demo` id.
+- **No claim-level entailment or citation coverage guarantee.** Exact quote provenance is
+  enforced; whether every material sentence is supported remains a production evaluation gate.
 
 ---
 
@@ -185,9 +195,9 @@ Authentication · multi-tenancy · workflow dashboards · notifications · auton
 agents · scheduled monitoring · collaboration features · fine-tuning · DPO ·
 enterprise integrations.
 
-Corpus is already the isolation boundary, so multi-tenancy is a scoping change rather
-than a redesign. Each of the others sits above the current pipeline rather than
-requiring changes to it.
+Corpus namespacing is a storage primitive, not multi-tenant authorization. Production still
+requires identity-derived scope, RBAC/ABAC, object and row isolation, adversarial isolation
+tests, retention/deletion controls, and audit. See `PRODUCTION_HYPOTHESIS.md`.
 
 ---
 
@@ -199,7 +209,7 @@ npx wrangler login
 npm run db:migrate:remote
 npm run ingest -- ./sample-documents/industrial
 npm run ingest -- ./sample-documents/pharma
-npm test          # 70/70
-npm run eval      # 14/14
+npm test          # 86/86
+npm run eval      # live API calls; previous recorded baseline 14/14
 npm run preview   # live app on the Workers runtime
 ```

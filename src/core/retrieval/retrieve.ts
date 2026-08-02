@@ -17,7 +17,7 @@
 
 import type { MistralConfig } from '../config';
 import type { EmbeddingService } from '../embeddings/mistral';
-import type { D1Store, VectorStore, DocumentRow, ChunkRow } from '../storage';
+import { vectorNamespace, type D1Store, type VectorStore, type DocumentRow, type ChunkRow } from '../storage';
 import type {
   AuthorityWeights,
   EvidenceConflict,
@@ -57,7 +57,7 @@ export class RetrievalService {
     );
     const fetchK = Math.min(opts.topK * (activeFilters.length > 0 ? 8 : 3), 100);
 
-    // Isolation is by namespace (one per domain), which Vectorize enforces
+    // Isolation is by namespace (one per corpus), which Vectorize enforces
     // natively. Field-level filtering is deliberately NOT pushed into the
     // vector query: Vectorize only filters on metadata fields that have an
     // explicitly created metadata index, and a filter on an unindexed field
@@ -65,10 +65,31 @@ export class RetrievalService {
     // looks exactly like "no relevant evidence exists". Filtering against D1,
     // which is authoritative for document metadata anyway, is correct by
     // construction and needs no per-field index management.
-    const matches = await this.vectors.query(queryVector, {
+    const namespace = vectorNamespace(opts.domain, opts.corpusId);
+    const primaryMatches = await this.vectors.query(queryVector, {
       topK: fetchK,
-      namespace: opts.domain,
+      namespace,
     });
+
+    // Migration compatibility for corpora indexed before corpus namespaces
+    // were introduced. Query the legacy domain namespace only while the new
+    // namespace has not filled the requested candidate window, then de-duplicate
+    // by vector id. Re-ingestion writes exclusively to the corpus namespace.
+    // This keeps the live prototype usable while ensuring new corpora cannot be
+    // crowded out by another corpus before D1 scoping is applied.
+    let matches = primaryMatches;
+    if (primaryMatches.length < fetchK) {
+      const legacyMatches = await this.vectors.query(queryVector, {
+        topK: fetchK,
+        namespace: opts.domain,
+      });
+      const merged = new Map(primaryMatches.map((match) => [match.id, match]));
+      for (const match of legacyMatches) {
+        const current = merged.get(match.id);
+        if (!current || match.score > current.score) merged.set(match.id, match);
+      }
+      matches = [...merged.values()].sort((a, b) => b.score - a.score).slice(0, fetchK);
+    }
 
     if (matches.length === 0) {
       return { chunks: [], documents: [], latencyMs: Date.now() - started };
@@ -79,11 +100,8 @@ export class RetrievalService {
     const rowByVectorId = new Map(rows.map((r) => [r.vector_id!, r]));
 
     const documentIds = [...new Set(rows.map((r) => r.document_id))];
-    const documents = new Map<string, DocumentRow>();
-    for (const id of documentIds) {
-      const doc = await this.d1.getDocument(id);
-      if (doc) documents.set(id, doc);
-    }
+    const documentRows = await this.d1.getDocumentsByIds(documentIds);
+    const documents = new Map<string, DocumentRow>(documentRows.map((doc) => [doc.id, doc]));
 
     const allDocs = [...documents.values()];
     const latestByType = mostRecentByDocumentType(allDocs);

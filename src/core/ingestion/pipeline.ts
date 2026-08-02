@@ -11,7 +11,7 @@ import { createConfig, countTokens, type OriBindings } from '../config';
 import { chunkPages } from '../chunking/chunker';
 import { EmbeddingService } from '../embeddings/mistral';
 import { chunkId as makeChunkId, contentHash, documentId as makeDocumentId, r2Key, vectorId as makeVectorId } from '../ids';
-import { Storage, type VectorMetadata } from '../storage';
+import { Storage, vectorNamespace, type VectorMetadata } from '../storage';
 import type { ChunkRecord, DocumentMetadata, DomainPack } from '../types';
 import { detectFileType, mimeTypeFor, normalizeDocument } from './normalize';
 
@@ -258,7 +258,7 @@ export class IngestionPipeline {
       const indexStart = Date.now();
       await this.storage.vectors.upsert(
         chunks.map((c, i) => ({ id: c.vectorId!, values: embeddings[i], metadata: c.metadata })),
-        this.pack.id
+        vectorNamespace(this.pack.id, input.corpusId)
       );
       await this.storage.d1.insertChunks(chunks);
       const indexMs = Date.now() - indexStart;

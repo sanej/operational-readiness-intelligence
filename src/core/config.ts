@@ -67,8 +67,8 @@ export function createConfig(env: Partial<OriBindings>): OriConfig {
     mistral: {
       apiKey,
       embedModel: env.MISTRAL_EMBED_MODEL || 'mistral-embed',
-      chatModel: env.MISTRAL_CHAT_MODEL || 'mistral-large-latest',
-      ocrModel: env.MISTRAL_OCR_MODEL || 'mistral-ocr-latest',
+      chatModel: env.MISTRAL_CHAT_MODEL || 'mistral-medium-3-5',
+      ocrModel: env.MISTRAL_OCR_MODEL || 'mistral-ocr-4-0',
       embedDimensions: EMBED_DIMENSIONS,
     },
     chunking: {

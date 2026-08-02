@@ -41,8 +41,8 @@ remote = true
 
 [vars]
 MISTRAL_EMBED_MODEL = "mistral-embed"
-MISTRAL_CHAT_MODEL = "mistral-large-latest"
-MISTRAL_OCR_MODEL = "mistral-ocr-latest"
+MISTRAL_CHAT_MODEL = "mistral-medium-3-5"
+MISTRAL_OCR_MODEL = "mistral-ocr-4-0"
 CHUNK_TARGET_TOKENS = "512"
 CHUNK_OVERLAP_TOKENS = "100"
 RETRIEVAL_TOP_K = "8"
